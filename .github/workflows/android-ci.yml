@@ -41,12 +41,8 @@ jobs:
           "build-tools;36.0.0"
           "ndk;28.2.13676358"
           "cmake;3.22.1"
-      - name: Set up Gradle 9.5
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.5.0"
-      - name: Generate pinned Gradle wrapper
-        run: gradle wrapper --gradle-version 9.5.0
       - name: Verify versions
         run: |
           java -version
@@ -54,17 +50,6 @@ jobs:
           sdkmanager --list_installed
       - name: Lint, unit test and assemble debug APK
         run: ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
-      - name: Upload generated Gradle wrapper
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-wrapper-9.5.0
-          path: |
-            gradlew
-            gradlew.bat
-            gradle/wrapper/gradle-wrapper.jar
-            gradle/wrapper/gradle-wrapper.properties
-          if-no-files-found: error
-          retention-days: 14
       - name: Upload ARM64 debug APK
         uses: actions/upload-artifact@v4
         with:
