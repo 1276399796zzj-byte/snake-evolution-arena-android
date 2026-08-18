@@ -7,7 +7,7 @@
 | JDK | 17 |
 | Android Gradle Plugin | 9.3.0 |
 | Gradle Wrapper | 9.5.0 |
-| compileSdk / targetSdk | 37 / 37 |
+| compileSdk / targetSdk | 36 / 36 |
 | minSdk | 29 |
 | Build Tools | 36.0.0 |
 | Android NDK | 28.2.13676358 |
@@ -26,7 +26,7 @@
 
 ```text
 platform-tools
-platforms;android-37
+platforms;android-36
 build-tools;36.0.0
 ndk;28.2.13676358
 cmake;3.22.1

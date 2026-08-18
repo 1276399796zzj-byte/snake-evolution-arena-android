@@ -5,6 +5,7 @@ project(snake_evolution_arena LANGUAGES CXX)
 option(SNAKE_BUILD_TESTS "Build host-side unit tests" OFF)
 
 add_library(snake_core STATIC
+    src/core/fixed_step.cpp
     src/core/version.cpp
 )
 
@@ -29,5 +30,13 @@ else()
         add_executable(version_test tests/version_test.cpp)
         target_link_libraries(version_test PRIVATE snake_core)
         add_test(NAME version_test COMMAND version_test)
+
+        add_executable(math_rng_test tests/math_rng_test.cpp)
+        target_link_libraries(math_rng_test PRIVATE snake_core)
+        add_test(NAME math_rng_test COMMAND math_rng_test)
+
+        add_executable(fixed_step_test tests/fixed_step_test.cpp)
+        target_link_libraries(fixed_step_test PRIVATE snake_core)
+        add_test(NAME fixed_step_test COMMAND fixed_step_test)
     endif()
 endif()

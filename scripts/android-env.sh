@@ -3,7 +3,7 @@
 set -u
 
 readonly REQUIRED_JAVA_MAJOR=17
-readonly REQUIRED_PLATFORM="android-37"
+readonly REQUIRED_PLATFORM="android-36"
 readonly REQUIRED_BUILD_TOOLS="36.0.0"
 readonly REQUIRED_NDK="28.2.13676358"
 readonly REQUIRED_CMAKE="3.22.1"
