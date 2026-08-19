@@ -8,6 +8,9 @@ add_library(snake_core STATIC
     src/core/fixed_step.cpp
     src/core/version.cpp
     src/data/game_data.cpp
+    src/game/collision_system.cpp
+    src/game/snake_system.cpp
+    src/game/world.cpp
 )
 
 target_include_directories(snake_core
@@ -43,5 +46,13 @@ else()
         add_executable(game_data_test tests/game_data_test.cpp)
         target_link_libraries(game_data_test PRIVATE snake_core)
         add_test(NAME game_data_test COMMAND game_data_test)
+
+        add_executable(world_movement_test tests/world_movement_test.cpp)
+        target_link_libraries(world_movement_test PRIVATE snake_core)
+        add_test(NAME world_movement_test COMMAND world_movement_test)
+
+        add_executable(collision_pickup_test tests/collision_pickup_test.cpp)
+        target_link_libraries(collision_pickup_test PRIVATE snake_core)
+        add_test(NAME collision_pickup_test COMMAND collision_pickup_test)
     endif()
 endif()
