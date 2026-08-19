@@ -11,6 +11,7 @@ add_library(snake_core STATIC
     src/game/collision_system.cpp
     src/game/snake_system.cpp
     src/game/world.cpp
+    src/platform/engine_host.cpp
 )
 
 target_include_directories(snake_core
@@ -54,5 +55,9 @@ else()
         add_executable(collision_pickup_test tests/collision_pickup_test.cpp)
         target_link_libraries(collision_pickup_test PRIVATE snake_core)
         add_test(NAME collision_pickup_test COMMAND collision_pickup_test)
+
+        add_executable(engine_host_test tests/engine_host_test.cpp)
+        target_link_libraries(engine_host_test PRIVATE snake_core)
+        add_test(NAME engine_host_test COMMAND engine_host_test)
     endif()
 endif()
