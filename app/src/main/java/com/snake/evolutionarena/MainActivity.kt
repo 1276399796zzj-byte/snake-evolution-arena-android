@@ -1,8 +1,8 @@
 package com.snake.evolutionarena
 
 import android.app.Activity
-import android.content.ColorStateList
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
