@@ -7,6 +7,7 @@ option(SNAKE_BUILD_TESTS "Build host-side unit tests" OFF)
 add_library(snake_core STATIC
     src/core/fixed_step.cpp
     src/core/version.cpp
+    src/data/game_data.cpp
 )
 
 target_include_directories(snake_core
@@ -38,5 +39,9 @@ else()
         add_executable(fixed_step_test tests/fixed_step_test.cpp)
         target_link_libraries(fixed_step_test PRIVATE snake_core)
         add_test(NAME fixed_step_test COMMAND fixed_step_test)
+
+        add_executable(game_data_test tests/game_data_test.cpp)
+        target_link_libraries(game_data_test PRIVATE snake_core)
+        add_test(NAME game_data_test COMMAND game_data_test)
     endif()
 endif()

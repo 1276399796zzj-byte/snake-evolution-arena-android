@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "maps": [
+    {
+      "id": "neon",
+      "name": "霓虹竞技场",
+      "kicker": "NEON CIRCUIT",
+      "description": "高速追猎，借助跃迁门切断对手路线。",
+      "mechanic": "相位门 · 加速轨道",
+      "accent": "#54F6FF",
+      "accent2": "#A35CFF",
+      "preview": "maps/map-neon.jpg"
+    },
+    {
+      "id": "wilds",
+      "name": "幻彩秘境",
+      "kicker": "PRISM WILDS",
+      "description": "在活体森林中收集灵露，驾驭孢子潮汐。",
+      "mechanic": "治愈花 · 荆棘丛",
+      "accent": "#B9FF6B",
+      "accent2": "#FF72C7",
+      "preview": "maps/map-wilds.jpg"
+    },
+    {
+      "id": "lab",
+      "name": "异变实验室",
+      "kicker": "MUTATION LAB",
+      "description": "风险最高的禁区，吸收诱变剂换取爆发力量。",
+      "mechanic": "诱变罐 · 腐蚀池",
+      "accent": "#FFCF4A",
+      "accent2": "#FF5A77",
+      "preview": "maps/map-lab.jpg"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skins": [
+    {"id":"neon-pulse","name":"霓虹脉冲","theme":"neon","head":"pulse-crown","body":"cyan-cells","trail":"scanline","entrance":"boot-flash","elimination":"pixel-burst"},
+    {"id":"red-overclock","name":"赤曜超频","theme":"neon","head":"reactor-fang","body":"red-circuit","trail":"overheat","entrance":"overclock-ring","elimination":"ember-grid"},
+    {"id":"quantum-ghost","name":"量子幽影","theme":"neon","head":"phase-mask","body":"violet-glitch","trail":"afterimage","entrance":"phase-split","elimination":"quantum-dissolve"},
+    {"id":"prism-corolla","name":"棱镜花冠","theme":"nature","head":"crystal-bloom","body":"petal-scale","trail":"pollen","entrance":"flowering","elimination":"petal-rain"},
+    {"id":"emerald-vine","name":"翡翠藤甲","theme":"nature","head":"thorn-helm","body":"vine-armor","trail":"leaf-wake","entrance":"root-rise","elimination":"seed-burst"},
+    {"id":"abyss-glow","name":"深海荧光","theme":"nature","head":"angler-crown","body":"biolume-scale","trail":"bubble-glow","entrance":"tide-ring","elimination":"plankton-wave"},
+    {"id":"acid-zero","name":"酸蚀零号","theme":"mutation","head":"vial-skull","body":"acid-vesicle","trail":"corrosion","entrance":"containment-break","elimination":"acid-splash"},
+    {"id":"titan-crystal","name":"钛晶机械","theme":"mutation","head":"alloy-jaw","body":"titan-plate","trail":"metal-spark","entrance":"assembly","elimination":"shard-blast"},
+    {"id":"fission-spore","name":"裂变孢体","theme":"mutation","head":"spore-eye","body":"cell-cluster","trail":"spore-cloud","entrance":"cell-division","elimination":"fission-pop"},
+    {"id":"azure-dragon","name":"青龙星轨","theme":"mythic","head":"dragon-horn","body":"azure-scale","trail":"star-orbit","entrance":"cloud-gate","elimination":"dragon-breath"},
+    {"id":"black-tortoise","name":"玄武幽甲","theme":"mythic","head":"tortoise-crown","body":"obsidian-shell","trail":"ink-current","entrance":"sigil-rise","elimination":"shell-shock"},
+    {"id":"golden-serpent","name":"曜金天蛇","theme":"mythic","head":"sun-diadem","body":"golden-scale","trail":"solar-ribbon","entrance":"sun-gate","elimination":"solar-flare"}
+  ]
+}

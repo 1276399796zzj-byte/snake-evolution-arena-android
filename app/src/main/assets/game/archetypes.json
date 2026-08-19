@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "archetypes": [
+    {"id":"viper","name":"影牙","title":"高速猎手","description":"转向灵敏，擅长切入与收割。","perk":"移速 +10% · 暴击 +8%","accent":"#54F6FF","speed":1.10,"damage":1.04,"pickup":1.00},
+    {"id":"bulwark","name":"玄甲","title":"防御核心","description":"更长的护盾窗口，容错稳定。","perk":"护盾时长 +35% · 初始体长 +8","accent":"#FFD56A","speed":0.95,"damage":1.00,"pickup":1.00},
+    {"id":"oracle","name":"星谕","title":"能量术师","description":"技能循环更快，范围压制出色。","perk":"技能冷却 -18% · 射程 +12%","accent":"#B989FF","speed":1.00,"damage":1.08,"pickup":1.08},
+    {"id":"scavenger","name":"拾荒者","title":"资源专家","description":"快速滚起雪球，成长选择更多。","perk":"拾取范围 +30% · 经验 +12%","accent":"#9CFF72","speed":1.00,"damage":0.96,"pickup":1.30}
+  ]
+}
