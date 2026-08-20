@@ -8,7 +8,7 @@
 - 竖屏大厅、沉浸式横屏战斗。
 - 30/45/60/90/120 FPS、Surface 级高刷新率请求，以及基于实际帧率、温度和省电状态的两级特效降载。
 - Vulkan 自动选择、强制 Vulkan、强制 OpenGL ES。
-- 三张带独立动态场景的地图、三种模式、四个原型、离线 AI、减速后的技能升级、模式音乐。
+- 三张带独立动态场景的地图、三种模式、四个原型、离线 AI、减速后的技能升级、三种有实际战斗效果的主动技能、模式音乐。
 - 三档画质、三档特效、12 款原创皮肤、可编辑按键布局与触感反馈。
 
 ## 已实现的渲染路径
@@ -20,7 +20,7 @@
 
 ## 构建与验证
 
-GitHub Actions 会安装固定版本的 SDK、NDK、CMake 与 Gradle，运行数据校验、8 项 C++ 测试、Android lint/Kotlin 测试，并使用 NDK `glslc` 生成 Vulkan SPIR-V。流水线还会检查 APK 仅含 ARM64、三张地图完整，并验证 Vulkan JNI 符号和 `libvulkan.so` 依赖后才上传调试 APK。不会提交本机 SDK、NDK、签名密钥或构建产物。
+GitHub Actions 会安装固定版本的 SDK、NDK、CMake 与 Gradle，运行数据校验、9 项 C++ 测试、Android lint/Kotlin 测试，并使用 NDK `glslc` 生成 Vulkan SPIR-V。流水线还会检查 APK 仅含 ARM64、三张地图完整，并验证 Vulkan JNI 符号和 `libvulkan.so` 依赖后才上传调试 APK。不会提交本机 SDK、NDK、签名密钥或构建产物。
 
 ```bash
 ./scripts/android-env.sh

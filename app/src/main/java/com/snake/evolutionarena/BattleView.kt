@@ -735,23 +735,28 @@ class BattleView(
 
     private fun activateSkill(index: Int) {
         val now = SystemClock.elapsedRealtime()
+        var activated = false
         when (index) {
             0 -> if (now >= pulseCooldownUntilMs) {
                 pulseStartedMs = now
                 pulseCooldownUntilMs = now + 4800L
                 haptic(HapticFeedbackConstants.CONFIRM)
+                activated = true
             }
             1 -> if (now >= dashCooldownUntilMs) {
                 dashUntilMs = now + 360L
                 dashCooldownUntilMs = now + 3900L
                 haptic(HapticFeedbackConstants.CONFIRM)
+                activated = true
             }
             2 -> if (now >= shieldCooldownUntilMs) {
                 shieldStartedMs = now
                 shieldCooldownUntilMs = now + 7200L
                 haptic(HapticFeedbackConstants.CONFIRM)
+                activated = true
             }
         }
+        if (activated && worldHandle != 0L) NativeBridge.activateAbility(worldHandle, index)
         invalidate()
     }
 

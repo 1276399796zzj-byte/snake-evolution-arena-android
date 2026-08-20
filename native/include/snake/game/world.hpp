@@ -51,8 +51,10 @@ class World {
     [[nodiscard]] std::uint32_t experience_required() const noexcept { return experience_required_; }
     [[nodiscard]] bool upgrade_pending() const noexcept { return upgrade_pending_; }
     [[nodiscard]] std::uint32_t upgrade_set() const noexcept { return upgrade_set_; }
+    [[nodiscard]] float shield_remaining_seconds() const noexcept { return shield_remaining_seconds_; }
 
     void choose_upgrade(std::uint32_t choice) noexcept;
+    void activate_ability(std::uint32_t ability);
 
   private:
     void initialize_player();
@@ -79,6 +81,7 @@ class World {
     std::uint32_t experience_required_{40U};
     bool upgrade_pending_{false};
     std::uint32_t upgrade_set_{0U};
+    float shield_remaining_seconds_{0.0F};
 };
 
 }  // namespace snake::game

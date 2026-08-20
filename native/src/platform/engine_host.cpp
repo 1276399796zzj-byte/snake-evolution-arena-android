@@ -70,6 +70,10 @@ void EngineHost::choose_upgrade(const std::uint32_t choice) noexcept {
     world_.choose_upgrade(choice);
 }
 
+void EngineHost::activate_ability(const std::uint32_t ability) {
+    world_.activate_ability(ability);
+}
+
 std::size_t EngineHost::write_snapshot(float* output, const std::size_t capacity) const noexcept {
     if (output == nullptr || capacity < snapshot_header_size) return 0U;
     const auto& player = world_.player();

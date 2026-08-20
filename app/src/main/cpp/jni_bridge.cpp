@@ -106,6 +106,17 @@ Java_com_snake_evolutionarena_NativeBridge_chooseUpgrade(
     }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_snake_evolutionarena_NativeBridge_activateAbility(
+    JNIEnv*,
+    jobject,
+    const jlong handle,
+    const jint ability) {
+    if (auto* host = from_handle(handle); host != nullptr) {
+        host->activate_ability(static_cast<std::uint32_t>(ability));
+    }
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_snake_evolutionarena_NativeBridge_vulkanSupportLevel(JNIEnv*, jobject) {
     return static_cast<jint>(snake::render::VulkanRenderer::support_level());

@@ -217,6 +217,15 @@ void World::resolve_snake_collisions(StepResult& result) {
                  snake_collision_radius) &&
              player_.segments.size() < bot.segments.size());
         if (player_hit) {
+            if (shield_remaining_seconds_ > 0.0F) {
+                player_.score += 3U;
+                result.score_delta += 3U;
+                result.defeated_bots += 1U;
+                add_experience(3U);
+                bot.score = bot.score > 2U ? bot.score - 2U : 0U;
+                respawn_snake(bot, index, false);
+                continue;
+            }
             result.player_defeated = true;
             if (config_.mode_index == 0U) {
                 player_.score = player_.score > 5U ? player_.score - 5U : 0U;
@@ -291,6 +300,51 @@ void World::choose_upgrade(const std::uint32_t choice) noexcept {
     upgrade_pending_ = false;
 }
 
+void World::activate_ability(const std::uint32_t ability) {
+    if (match_status_ != MatchStatus::active || !player_.alive || upgrade_pending_) return;
+    if (ability == 1U) {
+        player_.boost_energy = std::max(player_.boost_energy, 38.0F);
+        return;
+    }
+    if (ability == 2U) {
+        shield_remaining_seconds_ = std::max(shield_remaining_seconds_, 3.2F);
+        return;
+    }
+    if (ability != 0U) return;
+
+    const float pulse_radius = std::clamp(
+        std::min(config_.width, config_.height) * 0.34F,
+        180.0F,
+        460.0F);
+    const float pulse_radius_squared = pulse_radius * pulse_radius;
+    for (auto& food : foods_) {
+        if ((food.position - player_.position).length_squared() > pulse_radius_squared) continue;
+        const std::uint32_t raw_value = food.value;
+        const auto score_value = static_cast<std::uint32_t>(std::max(
+            1.0F,
+            std::round(static_cast<float>(raw_value) * config_.score_multiplier)));
+        player_.score += score_value;
+        player_.target_segment_count = std::min(
+            maximum_segments,
+            player_.target_segment_count +
+                static_cast<float>(raw_value) * 0.42F * config_.growth_multiplier);
+        const auto experience_value = static_cast<std::uint32_t>(std::max(
+            1.0F,
+            std::round(static_cast<float>(raw_value) * config_.experience_multiplier)));
+        add_experience(experience_value);
+        respawn_food(food);
+    }
+
+    for (std::size_t index = 0; index < bots_.size(); ++index) {
+        Snake& bot = bots_[index];
+        if (!bot.alive || (bot.position - player_.position).length_squared() > pulse_radius_squared) continue;
+        player_.score += 4U;
+        add_experience(3U);
+        bot.score = bot.score > 3U ? bot.score - 3U : 0U;
+        respawn_snake(bot, index, false);
+    }
+}
+
 void World::update_match_status() noexcept {
     if (match_status_ != MatchStatus::active) return;
     if (!player_.alive) {
@@ -313,6 +367,7 @@ StepResult World::step(const InputState& input, const float delta_seconds) {
     if (match_status_ != MatchStatus::active || upgrade_pending_) return result;
     const float safe_delta = std::max(0.0F, delta_seconds);
     elapsed_seconds_ += safe_delta;
+    shield_remaining_seconds_ = std::max(0.0F, shield_remaining_seconds_ - safe_delta);
 
     if (player_.alive) systems::advance_snake(player_, input, config_, safe_delta);
     for (std::size_t index = 0; index < bots_.size(); ++index) {

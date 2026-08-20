@@ -21,6 +21,7 @@ class EngineHost {
 
     void advance(std::int64_t frame_time_nanoseconds, const game::InputState& input);
     void choose_upgrade(std::uint32_t choice) noexcept;
+    void activate_ability(std::uint32_t ability);
     [[nodiscard]] std::size_t write_snapshot(float* output, std::size_t capacity) const noexcept;
 
   private:

@@ -29,6 +29,7 @@ object NativeBridge {
     )
     external fun writeWorldSnapshot(handle: Long, output: FloatArray): Int
     external fun chooseUpgrade(handle: Long, choice: Int)
+    external fun activateAbility(handle: Long, ability: Int)
 
     external fun vulkanSupportLevel(): Int
     external fun vulkanDeviceName(): String
