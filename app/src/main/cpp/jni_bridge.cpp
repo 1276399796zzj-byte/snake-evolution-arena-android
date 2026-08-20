@@ -30,11 +30,19 @@ Java_com_snake_evolutionarena_NativeBridge_createWorld(
     jobject,
     const jfloat width,
     const jfloat height,
-    const jlong seed) {
+    const jlong seed,
+    const jint map_index,
+    const jint mode_index,
+    const jint ai_level,
+    const jint archetype_index) {
     auto host = std::make_unique<snake::platform::EngineHost>(
         width,
         height,
-        static_cast<std::uint64_t>(seed));
+        static_cast<std::uint64_t>(seed),
+        static_cast<std::uint32_t>(map_index),
+        static_cast<std::uint32_t>(mode_index),
+        static_cast<std::uint32_t>(ai_level),
+        static_cast<std::uint32_t>(archetype_index));
     return static_cast<jlong>(reinterpret_cast<std::uintptr_t>(host.release()));
 }
 
@@ -78,4 +86,15 @@ Java_com_snake_evolutionarena_NativeBridge_writeWorldSnapshot(
     const auto written = host->write_snapshot(values, static_cast<std::size_t>(length));
     env->ReleaseFloatArrayElements(output, values, 0);
     return static_cast<jint>(written);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_snake_evolutionarena_NativeBridge_chooseUpgrade(
+    JNIEnv*,
+    jobject,
+    const jlong handle,
+    const jint choice) {
+    if (auto* host = from_handle(handle); host != nullptr) {
+        host->choose_upgrade(static_cast<std::uint32_t>(choice));
+    }
 }

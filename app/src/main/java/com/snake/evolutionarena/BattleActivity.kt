@@ -31,6 +31,7 @@ class BattleActivity : Activity() {
             modeName = intent.getStringExtra(EXTRA_MODE_NAME) ?: "闪击",
             archetypeId = intent.getStringExtra(EXTRA_ARCHETYPE) ?: "viper",
             skinId = intent.getStringExtra(EXTRA_SKIN) ?: "neon-pulse",
+            aiStrength = intent.getStringExtra(EXTRA_AI_STRENGTH) ?: "veteran",
             backend = intent.getStringExtra(EXTRA_BACKEND) ?: "auto",
             targetFps = targetFps,
             quality = intent.getStringExtra(EXTRA_QUALITY) ?: "balanced",
@@ -119,6 +120,7 @@ class BattleActivity : Activity() {
         const val EXTRA_MODE_NAME = "mode_name"
         const val EXTRA_ARCHETYPE = "archetype"
         const val EXTRA_SKIN = "skin"
+        const val EXTRA_AI_STRENGTH = "ai_strength"
         const val EXTRA_BACKEND = "backend"
         const val EXTRA_TARGET_FPS = "target_fps"
         const val EXTRA_QUALITY = "quality"
@@ -137,6 +139,7 @@ data class BattleConfig(
     val modeName: String,
     val archetypeId: String,
     val skinId: String,
+    val aiStrength: String,
     val backend: String,
     val targetFps: Int,
     val quality: String,

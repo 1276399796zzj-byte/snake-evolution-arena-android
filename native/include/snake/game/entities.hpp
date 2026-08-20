@@ -31,6 +31,14 @@ struct Snake {
 struct StepResult {
     std::uint32_t collected_food{0U};
     std::uint32_t score_delta{0U};
+    std::uint32_t defeated_bots{0U};
+    bool player_defeated{false};
+};
+
+enum class MatchStatus : std::uint8_t {
+    active = 0U,
+    victory = 1U,
+    defeat = 2U,
 };
 
 }  // namespace snake::game

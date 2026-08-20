@@ -10,10 +10,10 @@ int main() {
     std::array<float, 1024> snapshot{};
 
     const std::size_t initial_size = host.write_snapshot(snapshot.data(), snapshot.size());
-    assert(initial_size > 6U);
+    assert(initial_size > 14U);
     assert(snapshot[4] >= 18.0F);
     assert(snapshot[5] >= 1.0F);
-    const float initial_x = snapshot[0];
+    assert(snapshot[6] >= 4.0F);
 
     constexpr std::int64_t start = 1'000'000'000LL;
     host.advance(start, {{1.0F, 0.0F}, false});
@@ -21,8 +21,8 @@ int main() {
         host.advance(start + frame * 8'333'333LL, {{1.0F, 0.0F}, false});
     }
     const std::size_t advanced_size = host.write_snapshot(snapshot.data(), snapshot.size());
-    assert(advanced_size == initial_size);
-    assert(snapshot[0] > initial_x);
+    assert(advanced_size > 14U);
+    assert(snapshot[7] > 0.90F);
     assert(snapshot[2] >= 99.0F);
 
     std::array<float, 5> undersized{};

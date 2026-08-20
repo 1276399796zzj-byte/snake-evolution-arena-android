@@ -28,9 +28,17 @@ class BattleView(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
-    private val snapshot = FloatArray(1024)
+    private val snapshot = FloatArray(8192)
     private val particleX = FloatArray(56) { index -> ((index * 47 + 13) % 101) / 100f }
     private val particleY = FloatArray(56) { index -> ((index * 71 + 29) % 103) / 102f }
+    private val botColors = intArrayOf(
+        Color.rgb(255, 102, 126),
+        Color.rgb(255, 206, 87),
+        Color.rgb(125, 255, 154),
+        Color.rgb(127, 158, 255),
+        Color.rgb(233, 116, 255),
+        Color.rgb(255, 145, 72),
+    )
 
     private var worldHandle = 0L
     private var running = false
@@ -40,7 +48,6 @@ class BattleView(
     private var fpsWindowStartNanos = 0L
     private var renderedFrames = 0
     private var actualFps = 0f
-    private var gameStartedAt = 0L
 
     private var backgroundShader: LinearGradient? = null
     private var glowShader: RadialGradient? = null
@@ -111,8 +118,15 @@ class BattleView(
         resetControlPositions()
 
         if (worldHandle != 0L) NativeBridge.destroyWorld(worldHandle)
-        worldHandle = NativeBridge.createWorld(width.toFloat(), height.toFloat(), SystemClock.elapsedRealtimeNanos())
-        gameStartedAt = SystemClock.elapsedRealtime()
+        worldHandle = NativeBridge.createWorld(
+            width.toFloat(),
+            height.toFloat(),
+            SystemClock.elapsedRealtimeNanos(),
+            when (config.mapId) { "wilds" -> 1; "lab" -> 2; else -> 0 },
+            when (config.modeId) { "expedition" -> 1; "endless" -> 2; else -> 0 },
+            when (config.aiStrength) { "rookie" -> 0; "nightmare" -> 2; else -> 1 },
+            when (config.archetypeId) { "bulwark" -> 1; "oracle" -> 2; "scavenger" -> 3; else -> 0 },
+        )
         lastRenderedFrameNanos = 0L
     }
 
@@ -155,10 +169,12 @@ class BattleView(
         super.onDraw(canvas)
         drawArena(canvas)
         if (worldHandle != 0L) snapshotSize = NativeBridge.writeWorldSnapshot(worldHandle, snapshot)
-        if (snapshotSize >= 6) drawWorld(canvas)
+        if (snapshotSize >= SNAPSHOT_HEADER_SIZE) drawWorld(canvas)
         drawSkillEffects(canvas)
         drawHud(canvas)
         drawControls(canvas)
+        if (isUpgradePending()) drawUpgradeOverlay(canvas)
+        if (matchStatus() != 0) drawMatchOverlay(canvas)
         updateFps()
     }
 
@@ -246,7 +262,8 @@ class BattleView(
     private fun drawWorld(canvas: Canvas) {
         val segmentCount = snapshot[4].toInt().coerceAtLeast(0)
         val foodCount = snapshot[5].toInt().coerceAtLeast(0)
-        val foodOffset = 6 + segmentCount * 2
+        val botCount = snapshot[6].toInt().coerceAtLeast(0)
+        val foodOffset = SNAPSHOT_HEADER_SIZE + segmentCount * 2
 
         for (index in 0 until foodCount) {
             val cursor = foodOffset + index * 3
@@ -266,8 +283,38 @@ class BattleView(
             canvas.drawCircle(x, y, dp(4 + value).toFloat(), paint)
         }
 
+        var botCursor = foodOffset + foodCount * 3
+        for (botIndex in 0 until botCount) {
+            if (botCursor + 4 >= snapshotSize) break
+            val botHeadX = snapshot[botCursor]
+            val botHeadY = snapshot[botCursor + 1]
+            val botSegments = snapshot[botCursor + 3].toInt().coerceAtLeast(0)
+            val alive = snapshot[botCursor + 4] > .5f
+            botCursor += 5
+            val color = botColors[botIndex % botColors.size]
+            if (alive) {
+                for (segmentIndex in botSegments - 1 downTo 0) {
+                    val cursor = botCursor + segmentIndex * 2
+                    if (cursor + 1 >= snapshotSize) continue
+                    val progress = if (botSegments <= 1) 0f else segmentIndex.toFloat() / (botSegments - 1)
+                    paint.color = mix(color, mapSecondary, progress * .62f)
+                    canvas.drawCircle(
+                        snapshot[cursor],
+                        snapshot[cursor + 1],
+                        dp(9).toFloat() * (1f - progress * .28f),
+                        paint,
+                    )
+                }
+                paint.color = Color.WHITE
+                canvas.drawCircle(botHeadX, botHeadY, dp(9.5f), paint)
+                paint.color = color
+                canvas.drawCircle(botHeadX, botHeadY, dp(7.2f), paint)
+            }
+            botCursor += botSegments * 2
+        }
+
         for (index in segmentCount - 1 downTo 0) {
-            val cursor = 6 + index * 2
+            val cursor = SNAPSHOT_HEADER_SIZE + index * 2
             if (cursor + 1 >= snapshotSize) continue
             val progress = if (segmentCount <= 1) 0f else index.toFloat() / (segmentCount - 1)
             paint.color = mix(snakePrimary, snakeSecondary, progress)
@@ -328,6 +375,9 @@ class BattleView(
         val pad = dp(18).toFloat()
         val score = if (snapshotSize >= 4) snapshot[3].toInt() else 0
         val energy = if (snapshotSize >= 3) snapshot[2].coerceIn(0f, 100f) else 100f
+        val level = if (snapshotSize > 9) snapshot[9].toInt().coerceAtLeast(1) else 1
+        val experience = if (snapshotSize > 10) snapshot[10].coerceAtLeast(0f) else 0f
+        val experienceRequired = if (snapshotSize > 11) snapshot[11].coerceAtLeast(1f) else 40f
         paint.typeface = Typeface.create("sans", Typeface.BOLD)
         paint.textSize = sp(16)
         paint.color = Color.WHITE
@@ -349,7 +399,7 @@ class BattleView(
         paint.typeface = Typeface.create("sans", Typeface.BOLD)
         paint.textSize = sp(13)
         paint.color = Color.WHITE
-        canvas.drawText("得分 $score", right, pad + sp(16), paint)
+        canvas.drawText("LV.$level  ·  得分 $score", right, pad + sp(16), paint)
         paint.textSize = sp(10)
         paint.color = if (actualFps >= config.targetFps * .84f) mapPrimary else Color.rgb(255, 207, 74)
         canvas.drawText("${actualFps.toInt()} FPS", right, pad + sp(33), paint)
@@ -366,6 +416,20 @@ class BattleView(
         paint.textSize = sp(9)
         paint.color = Color.rgb(190, 205, 226)
         canvas.drawText("BOOST ${energy.toInt()}%", barX, barY + dp(20), paint)
+
+        val experienceY = barY + dp(27)
+        paint.color = Color.argb(80, 255, 255, 255)
+        canvas.drawRoundRect(barX, experienceY, barX + barWidth, experienceY + dp(4), dp(4).toFloat(), dp(4).toFloat(), paint)
+        paint.color = mapSecondary
+        canvas.drawRoundRect(
+            barX,
+            experienceY,
+            barX + barWidth * (experience / experienceRequired).coerceIn(0f, 1f),
+            experienceY + dp(4),
+            dp(4).toFloat(),
+            dp(4).toFloat(),
+            paint,
+        )
 
         paint.textAlign = Paint.Align.CENTER
         paint.typeface = Typeface.create("sans", Typeface.BOLD)
@@ -449,7 +513,99 @@ class BattleView(
         }
     }
 
+    private fun drawUpgradeOverlay(canvas: Canvas) {
+        paint.color = Color.argb(222, 3, 7, 17)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.textSize = sp(25)
+        paint.color = Color.WHITE
+        canvas.drawText("选择进化模块", width * .5f, height * .19f, paint)
+        paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+        paint.textSize = sp(10)
+        paint.color = Color.rgb(157, 177, 205)
+        canvas.drawText("每次升级需要更多经验，选择期间战斗暂停", width * .5f, height * .19f + dp(24), paint)
+
+        val set = snapshot.getOrElse(13) { 0f }.toInt().coerceIn(0, 3)
+        val names = UPGRADE_NAMES[set]
+        val descriptions = UPGRADE_DESCRIPTIONS[set]
+        for (choice in 0..2) {
+            val bounds = upgradeCard(choice)
+            paint.color = Color.argb(232, 12, 24, 47)
+            canvas.drawRoundRect(bounds[0], bounds[1], bounds[2], bounds[3], dp(18).toFloat(), dp(18).toFloat(), paint)
+            strokePaint.strokeWidth = dp(1.5f)
+            strokePaint.color = if (choice == 1) mapPrimary else Color.argb(130, Color.red(mapSecondary), Color.green(mapSecondary), Color.blue(mapSecondary))
+            canvas.drawRoundRect(bounds[0], bounds[1], bounds[2], bounds[3], dp(18).toFloat(), dp(18).toFloat(), strokePaint)
+            paint.textSize = sp(25)
+            paint.color = if (choice == 1) mapPrimary else Color.WHITE
+            canvas.drawText(UPGRADE_ICONS[choice], (bounds[0] + bounds[2]) * .5f, bounds[1] + dp(48), paint)
+            paint.typeface = Typeface.create("sans", Typeface.BOLD)
+            paint.textSize = sp(15)
+            paint.color = Color.WHITE
+            canvas.drawText(names[choice], (bounds[0] + bounds[2]) * .5f, bounds[1] + dp(82), paint)
+            paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+            paint.textSize = sp(10)
+            paint.color = Color.rgb(165, 185, 211)
+            canvas.drawText(descriptions[choice], (bounds[0] + bounds[2]) * .5f, bounds[1] + dp(106), paint)
+        }
+        paint.textAlign = Paint.Align.LEFT
+    }
+
+    private fun drawMatchOverlay(canvas: Canvas) {
+        val victory = matchStatus() == 1
+        paint.color = Color.argb(224, 3, 7, 17)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.textSize = sp(38)
+        paint.color = if (victory) mapPrimary else Color.rgb(255, 104, 126)
+        canvas.drawText(if (victory) "作战完成" else "战蛇失活", width * .5f, height * .40f, paint)
+        paint.textSize = sp(16)
+        paint.color = Color.WHITE
+        canvas.drawText("最终得分 ${snapshot.getOrElse(3) { 0f }.toInt()}  ·  等级 ${snapshot.getOrElse(9) { 1f }.toInt()}", width * .5f, height * .50f, paint)
+        paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+        paint.textSize = sp(11)
+        paint.color = Color.rgb(157, 177, 205)
+        canvas.drawText("轻触任意位置返回竖屏大厅", width * .5f, height * .59f, paint)
+        paint.textAlign = Paint.Align.LEFT
+    }
+
+    private fun upgradeChoiceAt(x: Float, y: Float): Int {
+        for (choice in 0..2) {
+            val bounds = upgradeCard(choice)
+            if (x in bounds[0]..bounds[2] && y in bounds[1]..bounds[3]) return choice
+        }
+        return -1
+    }
+
+    private fun upgradeCard(choice: Int): FloatArray {
+        val gap = dp(16).toFloat()
+        val cardWidth = minOf(dp(210).toFloat(), (width - dp(120).toFloat() - gap * 2f) / 3f)
+        val totalWidth = cardWidth * 3f + gap * 2f
+        val left = (width - totalWidth) * .5f + choice * (cardWidth + gap)
+        val top = height * .31f
+        return floatArrayOf(left, top, left + cardWidth, top + minOf(dp(150).toFloat(), height * .42f))
+    }
+
+    private fun isUpgradePending(): Boolean = snapshotSize > 12 && snapshot[12] > .5f
+    private fun matchStatus(): Int = if (snapshotSize > 8) snapshot[8].toInt() else 0
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (matchStatus() != 0) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) onExit()
+            return true
+        }
+        if (isUpgradePending()) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                val choice = upgradeChoiceAt(event.getX(event.actionIndex), event.getY(event.actionIndex))
+                if (choice >= 0 && worldHandle != 0L) {
+                    NativeBridge.chooseUpgrade(worldHandle, choice)
+                    haptic(HapticFeedbackConstants.CONFIRM)
+                    invalidate()
+                }
+            }
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex
@@ -592,7 +748,7 @@ class BattleView(
     private fun isMovementSide(x: Float): Boolean = if (config.leftHanded) x >= width * .45f else x <= width * .55f
 
     private fun modeClock(): String {
-        val elapsedSeconds = ((SystemClock.elapsedRealtime() - gameStartedAt) / 1000L).coerceAtLeast(0L)
+        val elapsedSeconds = if (snapshotSize > 7) snapshot[7].toLong().coerceAtLeast(0L) else 0L
         val total = when (config.modeId) {
             "blitz" -> 180L
             "expedition" -> 600L
@@ -672,4 +828,21 @@ class BattleView(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + .5f).toInt()
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
     private fun sp(value: Int): Float = value * resources.displayMetrics.scaledDensity
+
+    companion object {
+        private const val SNAPSHOT_HEADER_SIZE = 14
+        private val UPGRADE_ICONS = arrayOf("⚡", "◎", "◇")
+        private val UPGRADE_NAMES = arrayOf(
+            arrayOf("超频突触", "磁暴场", "虚空电容"),
+            arrayOf("躯体锻造", "相位尾迹", "纳米修复"),
+            arrayOf("积分矩阵", "吞噬本能", "学习协议"),
+            arrayOf("高能营养", "迅捷鳞片", "复合电容"),
+        )
+        private val UPGRADE_DESCRIPTIONS = arrayOf(
+            arrayOf("移动速度 +8%", "拾取范围 +18%", "冲刺消耗 -12%"),
+            arrayOf("立即增加 8 节", "转向响应 +16%", "能量立即充满"),
+            arrayOf("得分效率 +15%", "成长效率 +20%", "经验效率 +18%"),
+            arrayOf("资源体积 +12%", "移动速度 +5%", "拾取与回复强化"),
+        )
+    }
 }

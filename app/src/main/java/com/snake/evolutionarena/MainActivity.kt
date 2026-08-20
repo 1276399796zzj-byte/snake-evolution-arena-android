@@ -460,6 +460,7 @@ class MainActivity : Activity() {
             putExtra(BattleActivity.EXTRA_MODE_NAME, selectedMode.shortName)
             putExtra(BattleActivity.EXTRA_ARCHETYPE, selectedArchetype.id)
             putExtra(BattleActivity.EXTRA_SKIN, selectedSkin.id)
+            putExtra(BattleActivity.EXTRA_AI_STRENGTH, aiStrength)
             putExtra(BattleActivity.EXTRA_BACKEND, backend)
             putExtra(BattleActivity.EXTRA_TARGET_FPS, targetFps.toIntOrNull() ?: 60)
             putExtra(BattleActivity.EXTRA_QUALITY, quality)

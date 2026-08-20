@@ -7,7 +7,15 @@ object NativeBridge {
 
     external fun coreVersion(): String
     external fun saveFormatVersion(): Int
-    external fun createWorld(width: Float, height: Float, seed: Long): Long
+    external fun createWorld(
+        width: Float,
+        height: Float,
+        seed: Long,
+        mapIndex: Int,
+        modeIndex: Int,
+        aiLevel: Int,
+        archetypeIndex: Int,
+    ): Long
     external fun destroyWorld(handle: Long)
     external fun advanceWorld(
         handle: Long,
@@ -17,4 +25,5 @@ object NativeBridge {
         boost: Boolean,
     )
     external fun writeWorldSnapshot(handle: Long, output: FloatArray): Int
+    external fun chooseUpgrade(handle: Long, choice: Int)
 }
