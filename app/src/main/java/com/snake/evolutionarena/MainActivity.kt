@@ -1,7 +1,10 @@
 package com.snake.evolutionarena
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Dialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Canvas
@@ -14,12 +17,14 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -45,7 +50,7 @@ class MainActivity : Activity() {
     private lateinit var selectedSkin: Skin
 
     private var aiStrength = "veteran"
-    private var backend = "opengl"
+    private var backend = "compat"
     private var targetFps = "120"
     private var quality = "balanced"
     private var effects = "standard"
@@ -62,6 +67,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashDiagnostics.markStage(this, "lobby_create")
         window.statusBarColor = backgroundColor
         window.navigationBarColor = backgroundColor
 
@@ -78,12 +84,11 @@ class MainActivity : Activity() {
             it.id == preferences.getString("skin", "neon-pulse")
         } ?: catalog.skins.first()
         aiStrength = preferences.getString("ai", "veteran") ?: "veteran"
-        val savedBackend = preferences.getString("backend", "opengl") ?: "opengl"
+        val savedBackend = preferences.getString("backend", "compat") ?: "compat"
         val interruptedBattleBoot = preferences.getBoolean("battle_boot_pending", false)
         backend = if (preferences.getInt("settings_revision", 0) < SETTINGS_REVISION || interruptedBattleBoot) {
-            // Existing builds could select Vulkan before the battle safety layer was installed.
-            // Migrate once to the stable renderer; Vulkan remains available as an explicit choice.
-            "opengl"
+            // Migrate existing installs once to the Android 16-safe path. Advanced renderers stay opt-in.
+            "compat"
         } else {
             savedBackend
         }
@@ -100,7 +105,12 @@ class MainActivity : Activity() {
             .putBoolean("battle_boot_pending", false)
             .apply()
 
-        setContentView(buildLobby())
+        val lobby = buildLobby()
+        setContentView(lobby)
+        CrashDiagnostics.markStage(this, "lobby_ready")
+        lobby.post {
+            CrashDiagnostics.consumeLastFailure(this)?.let(::showLastCrashReport)
+        }
     }
 
     private fun buildLobby(): View {
@@ -118,6 +128,7 @@ class MainActivity : Activity() {
         }
         scroll.addView(content, matchWrap())
         root.addView(scroll, matchParent())
+        applySystemBarInsets(root, scroll)
 
         content.addView(buildHeader())
         content.addView(space(30))
@@ -281,6 +292,7 @@ class MainActivity : Activity() {
         }
         scroll.addView(content, matchWrap())
         root.addView(scroll, matchParent())
+        applySystemBarInsets(root, scroll)
 
         content.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -306,9 +318,9 @@ class MainActivity : Activity() {
         content.addView(space(22))
         content.addView(section("01", "画面与性能", "独立设置菜单"))
         val graphicsPanel = settingsPanel()
-        graphicsPanel.addView(settingTitle("图形接口", "自动模式走稳定 OpenGL；Vulkan 可手动启用，不兼容会回退"))
+        graphicsPanel.addView(settingTitle("图形接口", "兼容模式不加载原生库或 GPU 驱动；其他接口作为进阶选项"))
         graphicsPanel.addView(segmented(
-            listOf("自动" to "auto", "Vulkan" to "vulkan", "OpenGL" to "opengl"),
+            listOf("兼容" to "compat", "自动" to "auto", "Vulkan" to "vulkan", "OpenGL" to "opengl"),
             draftBackend,
         ) { draftBackend = it })
         graphicsPanel.addView(settingGap())
@@ -573,29 +585,63 @@ class MainActivity : Activity() {
     }
 
     private fun launchBattle() {
+        CrashDiagnostics.markStage(this, "lobby_launch_requested")
         savePreferences()
         getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
             .putBoolean("battle_boot_pending", true)
             .apply()
 
-        startActivity(Intent(this, BattleActivity::class.java).apply {
-            putExtra(BattleActivity.EXTRA_MAP, selectedMap.id)
-            putExtra(BattleActivity.EXTRA_MAP_NAME, selectedMap.name)
-            putExtra(BattleActivity.EXTRA_MODE, selectedMode.id)
-            putExtra(BattleActivity.EXTRA_MODE_NAME, selectedMode.shortName)
-            putExtra(BattleActivity.EXTRA_ARCHETYPE, selectedArchetype.id)
-            putExtra(BattleActivity.EXTRA_SKIN, selectedSkin.id)
-            putExtra(BattleActivity.EXTRA_AI_STRENGTH, aiStrength)
-            putExtra(BattleActivity.EXTRA_BACKEND, backend)
-            putExtra(BattleActivity.EXTRA_TARGET_FPS, targetFps.toIntOrNull() ?: 60)
-            putExtra(BattleActivity.EXTRA_QUALITY, quality)
-            putExtra(BattleActivity.EXTRA_EFFECTS, effects)
-            putExtra(BattleActivity.EXTRA_JOYSTICK, joystick)
-            putExtra(BattleActivity.EXTRA_LEFT_HANDED, leftHanded)
-            putExtra(BattleActivity.EXTRA_HAPTICS, haptics)
-            putExtra(BattleActivity.EXTRA_MUSIC, music)
-        })
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        runCatching {
+            startActivity(Intent(this, BattleActivity::class.java).apply {
+                putExtra(BattleActivity.EXTRA_MAP, selectedMap.id)
+                putExtra(BattleActivity.EXTRA_MAP_NAME, selectedMap.name)
+                putExtra(BattleActivity.EXTRA_MODE, selectedMode.id)
+                putExtra(BattleActivity.EXTRA_MODE_NAME, selectedMode.shortName)
+                putExtra(BattleActivity.EXTRA_ARCHETYPE, selectedArchetype.id)
+                putExtra(BattleActivity.EXTRA_SKIN, selectedSkin.id)
+                putExtra(BattleActivity.EXTRA_AI_STRENGTH, aiStrength)
+                putExtra(BattleActivity.EXTRA_BACKEND, backend)
+                putExtra(BattleActivity.EXTRA_TARGET_FPS, targetFps.toIntOrNull() ?: 60)
+                putExtra(BattleActivity.EXTRA_QUALITY, quality)
+                putExtra(BattleActivity.EXTRA_EFFECTS, effects)
+                putExtra(BattleActivity.EXTRA_JOYSTICK, joystick)
+                putExtra(BattleActivity.EXTRA_LEFT_HANDED, leftHanded)
+                putExtra(BattleActivity.EXTRA_HAPTICS, haptics)
+                putExtra(BattleActivity.EXTRA_MUSIC, music)
+            })
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        }.onFailure { throwable ->
+            getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
+                .putBoolean("battle_boot_pending", false)
+                .apply()
+            CrashDiagnostics.recordFailure(this, "lobby_start_activity", throwable)
+            showLastCrashReport(CrashDiagnostics.consumeLastFailure(this) ?: "无法创建战场窗口")
+        }
+    }
+
+    private fun applySystemBarInsets(root: View, scroll: ScrollView) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        window.setDecorFitsSystemWindows(false)
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val safe = insets.getInsets(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout(),
+            )
+            scroll.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
+        root.requestApplyInsets()
+    }
+
+    private fun showLastCrashReport(report: String) {
+        AlertDialog.Builder(this)
+            .setTitle("已捕获上次战场异常")
+            .setMessage(report)
+            .setNegativeButton("关闭", null)
+            .setPositiveButton("复制诊断") { _, _ ->
+                getSystemService(ClipboardManager::class.java)
+                    ?.setPrimaryClip(ClipData.newPlainText("蛇域进化诊断", report))
+            }
+            .show()
     }
 
     private fun savePreferences() {
@@ -744,7 +790,7 @@ class MainActivity : Activity() {
     private data class SelectableCard(val root: View, val border: View, val badge: View)
 
     private companion object {
-        const val SETTINGS_REVISION = 2
+        const val SETTINGS_REVISION = 3
     }
 }
 

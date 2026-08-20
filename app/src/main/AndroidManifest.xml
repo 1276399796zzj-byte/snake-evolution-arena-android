@@ -10,7 +10,10 @@
         android:required="false" />
 
     <application
+        android:name=".ArenaApplication"
         android:allowBackup="true"
+        android:appCategory="game"
+        android:enableOnBackInvokedCallback="false"
         android:icon="@mipmap/ic_launcher"
         android:label="蛇域进化"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -20,6 +23,7 @@
             android:name=".BattleActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false"
+            android:resizeableActivity="false"
             android:screenOrientation="sensorLandscape" />
         <activity
             android:name=".MainActivity"

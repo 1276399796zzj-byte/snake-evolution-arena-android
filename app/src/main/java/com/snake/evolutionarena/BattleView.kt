@@ -149,6 +149,7 @@ class BattleView(
             when (config.modeId) { "expedition" -> 1; "endless" -> 2; else -> 0 },
             when (config.aiStrength) { "rookie" -> 0; "nightmare" -> 2; else -> 1 },
             when (config.archetypeId) { "bulwark" -> 1; "oracle" -> 2; "scavenger" -> 3; else -> 0 },
+            allowNative = config.backend != "compat",
         )
         lastChoreographerFrameNanos = 0L
         renderAccumulatorNanos = 0L

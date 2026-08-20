@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
 }
 
+val arenaAbi = providers.gradleProperty("arenaAbi").orElse("arm64-v8a")
+
 android {
     namespace = "com.snake.evolutionarena"
     compileSdk = 36
@@ -11,11 +13,12 @@ android {
         applicationId = "com.snake.evolutionarena"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += arenaAbi.get()
         }
 
         externalNativeBuild {
@@ -64,4 +67,7 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

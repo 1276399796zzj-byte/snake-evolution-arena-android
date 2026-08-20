@@ -23,8 +23,9 @@ internal interface GameWorldRuntime {
             modeIndex: Int,
             aiLevel: Int,
             archetypeIndex: Int,
+            allowNative: Boolean = true,
         ): GameWorldRuntime {
-            if (NativeBridge.isAvailable) {
+            if (allowNative && NativeBridge.isAvailable) {
                 val handle = runCatching {
                     NativeBridge.createWorld(
                         width,

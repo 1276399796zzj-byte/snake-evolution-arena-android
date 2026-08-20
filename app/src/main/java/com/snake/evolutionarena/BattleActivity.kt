@@ -1,7 +1,6 @@
 package com.snake.evolutionarena
 
 import android.app.Activity
-import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -9,7 +8,11 @@ import android.os.PowerManager
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.Gravity
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.abs
 
@@ -24,15 +27,24 @@ class BattleActivity : Activity() {
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         super.onCreate(savedInstanceState)
+        CrashDiagnostics.markStage(this, "battle_on_create")
+        runCatching { initializeBattle() }
+            .onFailure { throwable ->
+                CrashDiagnostics.recordFailure(this, "battle_initialize", throwable)
+                showStartupFailure(throwable)
+            }
+    }
+
+    private fun initializeBattle() {
+        CrashDiagnostics.markStage(this, "battle_window")
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         keepImmersive()
 
         val targetFps = intent.getIntExtra(EXTRA_TARGET_FPS, 60).coerceIn(30, 120)
-        runCatching { requestBestRefreshRate(targetFps) }
 
+        CrashDiagnostics.markStage(this, "battle_config")
         battleConfig = BattleConfig(
             mapId = intent.getStringExtra(EXTRA_MAP) ?: "neon",
             mapName = intent.getStringExtra(EXTRA_MAP_NAME) ?: "霓虹竞技场",
@@ -41,7 +53,7 @@ class BattleActivity : Activity() {
             archetypeId = intent.getStringExtra(EXTRA_ARCHETYPE) ?: "viper",
             skinId = intent.getStringExtra(EXTRA_SKIN) ?: "neon-pulse",
             aiStrength = intent.getStringExtra(EXTRA_AI_STRENGTH) ?: "veteran",
-            backend = intent.getStringExtra(EXTRA_BACKEND) ?: "opengl",
+            backend = intent.getStringExtra(EXTRA_BACKEND) ?: "compat",
             targetFps = targetFps,
             quality = intent.getStringExtra(EXTRA_QUALITY) ?: "balanced",
             effects = intent.getStringExtra(EXTRA_EFFECTS) ?: "standard",
@@ -50,23 +62,30 @@ class BattleActivity : Activity() {
             haptics = intent.getBooleanExtra(EXTRA_HAPTICS, true),
             music = intent.getBooleanExtra(EXTRA_MUSIC, true),
         )
+        runCatching { requestBestRefreshRate(targetFps) }
+        CrashDiagnostics.markStage(this, "battle_view")
         root = FrameLayout(this)
         battleView = BattleView(
             context = this,
             config = battleConfig,
             onExit = { finishAfterTransition() },
         )
+        CrashDiagnostics.markStage(this, "battle_renderer")
         installInitialRenderer()
         root.addView(
             battleView,
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
         )
         setContentView(root)
+        CrashDiagnostics.markStage(this, "battle_content_ready")
         runCatching { registerPerformanceSignals() }
         if (battleConfig.music) soundtrack = runCatching {
             ProceduralSoundtrack(battleConfig.modeId)
         }.getOrNull()
-        root.postDelayed({ markBattleBootSuccessful() }, BATTLE_BOOT_GUARD_MS)
+        root.postDelayed({
+            markBattleBootSuccessful()
+            CrashDiagnostics.markStage(this, "battle_running")
+        }, BATTLE_BOOT_GUARD_MS)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -81,14 +100,14 @@ class BattleActivity : Activity() {
         updateSystemPerformanceTier(powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE)
         sceneRenderer?.onHostResume()
         if (::battleView.isInitialized) battleView.resumeGame()
-        soundtrack?.play()
+        runCatching { soundtrack?.play() }
     }
 
     override fun onPause() {
         hostResumed = false
         if (::battleView.isInitialized) battleView.pauseGame()
         sceneRenderer?.onHostPause()
-        soundtrack?.pause()
+        runCatching { soundtrack?.pause() }
         super.onPause()
     }
 
@@ -101,7 +120,7 @@ class BattleActivity : Activity() {
         if (::battleView.isInitialized) battleView.releaseGame()
         sceneRenderer?.release()
         sceneRenderer = null
-        soundtrack?.release()
+        runCatching { soundtrack?.release() }
         soundtrack = null
         super.onDestroy()
     }
@@ -149,6 +168,11 @@ class BattleActivity : Activity() {
 
     private fun installInitialRenderer() {
         val requested = battleConfig.backend
+        if (requested == "compat") {
+            sceneRenderer = null
+            battleView.attachSceneRenderer(null, "CANVAS · ANDROID 16 兼容")
+            return
+        }
         if (requested == "vulkan" && VulkanBridge.supportLevel() > 0) {
             val installed = runCatching {
                 installRenderer(
@@ -245,6 +269,53 @@ class BattleActivity : Activity() {
         getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
             .putBoolean("battle_boot_pending", false)
             .apply()
+    }
+
+    private fun showStartupFailure(throwable: Throwable) {
+        runCatching { sceneRenderer?.release() }
+        sceneRenderer = null
+        runCatching { if (::battleView.isInitialized) battleView.releaseGame() }
+        getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
+            .putBoolean("battle_boot_pending", false)
+            .putString("backend", "compat")
+            .apply()
+
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density + .5f).toInt()
+        val message = buildString {
+            append("战场没有继续闪退，已停在安全诊断页。\n")
+            append("异常：")
+            append(throwable.javaClass.simpleName)
+            throwable.message?.takeIf { it.isNotBlank() }?.let {
+                append("\n")
+                append(it.take(300))
+            }
+            append("\n\n返回大厅后会显示可复制的完整诊断码。")
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(36), dp(24), dp(36), dp(24))
+            setBackgroundColor(Color.rgb(5, 9, 21))
+            addView(TextView(this@BattleActivity).apply {
+                text = "安卓 16 安全模式"
+                textSize = 26f
+                setTextColor(Color.rgb(82, 246, 255))
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(this@BattleActivity).apply {
+                text = message
+                textSize = 15f
+                setTextColor(Color.rgb(210, 222, 238))
+                gravity = Gravity.CENTER
+                setPadding(0, dp(18), 0, dp(22))
+            })
+            addView(Button(this@BattleActivity).apply {
+                text = "返回大厅并查看诊断"
+                setOnClickListener { finish() }
+            }, LinearLayout.LayoutParams(dp(260), dp(54)))
+        }
+        setContentView(panel)
     }
 
     companion object {
