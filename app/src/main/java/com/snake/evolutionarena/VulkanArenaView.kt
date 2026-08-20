@@ -35,6 +35,8 @@ class VulkanArenaView(
     private var pendingShieldStartedMs = -10_000L
     private var renderPulseStartedMs = -10_000L
     private var renderShieldStartedMs = -10_000L
+    private var pendingPerformanceTier = 0
+    private var renderPerformanceTier = 0
     private var generation = 0L
     private var renderQueued = false
     private var active = false
@@ -99,6 +101,7 @@ class VulkanArenaView(
         directionY: Float,
         pulseStartedMs: Long,
         shieldStartedMs: Long,
+        performanceTier: Int,
     ) {
         val size = snapshotSize.coerceIn(0, minOf(snapshot.size, pendingSnapshot.size))
         synchronized(lock) {
@@ -109,6 +112,7 @@ class VulkanArenaView(
             pendingDirectionY = directionY
             pendingPulseStartedMs = pulseStartedMs
             pendingShieldStartedMs = shieldStartedMs
+            pendingPerformanceTier = performanceTier
             generation += 1L
             scheduleRenderLocked()
         }
@@ -156,6 +160,7 @@ class VulkanArenaView(
             renderDirectionY = pendingDirectionY
             renderPulseStartedMs = pendingPulseStartedMs
             renderShieldStartedMs = pendingShieldStartedMs
+            renderPerformanceTier = pendingPerformanceTier
             frameGeneration = generation
         }
 
@@ -170,6 +175,7 @@ class VulkanArenaView(
                 renderPulseStartedMs,
                 renderShieldStartedMs,
                 SystemClock.elapsedRealtime(),
+                renderPerformanceTier,
             )
             val succeeded = NativeBridge.renderVulkan(
                 nativeHandle,

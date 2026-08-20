@@ -21,6 +21,7 @@ class SceneGeometryBuilder(
     private val palette = arenaPalette(config)
     private var viewportWidth = 1f
     private var viewportHeight = 1f
+    private var runtimePerformanceTier = 0
 
     fun build(
         snapshot: FloatArray,
@@ -32,9 +33,11 @@ class SceneGeometryBuilder(
         pulseStartedMs: Long,
         shieldStartedMs: Long,
         nowMs: Long,
+        performanceTier: Int,
     ): Int {
         viewportWidth = width.coerceAtLeast(1).toFloat()
         viewportHeight = height.coerceAtLeast(1).toFloat()
+        runtimePerformanceTier = performanceTier.coerceIn(0, 2)
         vertices.clear()
 
         val time = nowMs / 1000f
@@ -61,13 +64,15 @@ class SceneGeometryBuilder(
             palette.mapPrimary,
             .035f,
         )
-        addCircle(
-            viewportWidth * .84f,
-            viewportHeight * .12f,
-            largest * .31f,
-            palette.mapSecondary,
-            .045f,
-        )
+        if (runtimePerformanceTier < 2) {
+            addCircle(
+                viewportWidth * .84f,
+                viewportHeight * .12f,
+                largest * .31f,
+                palette.mapSecondary,
+                .045f,
+            )
+        }
 
         when (config.mapId) {
             "wilds" -> buildWilds(time)
@@ -78,7 +83,8 @@ class SceneGeometryBuilder(
     }
 
     private fun buildNeon(time: Float) {
-        val gap = dp(if (config.quality == "performance") 86f else 58f)
+        val baseGap = if (config.quality == "performance") 86f else 58f
+        val gap = dp(baseGap * (1f + runtimePerformanceTier * .32f))
         val offset = (time * dp(7f)) % gap
         var x = -viewportHeight * .28f - gap + offset
         while (x < viewportWidth + gap) {
@@ -103,7 +109,7 @@ class SceneGeometryBuilder(
     }
 
     private fun buildWilds(time: Float) {
-        val count = if (config.quality == "performance") 5 else 9
+        val count = (if (config.quality == "performance") 5 else 9) - runtimePerformanceTier * 2
         for (index in 0 until count) {
             val x = seededX(index) * viewportWidth
             val y = seededY(index + 8) * viewportHeight
@@ -113,7 +119,7 @@ class SceneGeometryBuilder(
     }
 
     private fun buildLab(time: Float) {
-        val stripe = dp(70f)
+        val stripe = dp(70f * (1f + runtimePerformanceTier * .28f))
         val offset = (time * dp(10f)) % stripe
         var x = -viewportHeight + offset
         while (x < viewportWidth + viewportHeight) {
@@ -135,12 +141,13 @@ class SceneGeometryBuilder(
     }
 
     private fun buildAmbientParticles(time: Float) {
-        val count = when {
+        val baseCount = when {
             config.quality == "performance" -> 8
             config.effects == "luxury" -> 42
             config.effects == "compact" -> 12
             else -> 24
         }
+        val count = (baseCount shr runtimePerformanceTier).coerceAtLeast(5)
         for (index in 0 until count) {
             val x = positiveModulo(seededX(index) + time * (.0014f + index % 4 * .0003f), 1f) * viewportWidth
             val y = positiveModulo(seededY(index) + sin(time * .22f + index) * .018f, 1f) * viewportHeight
@@ -169,7 +176,7 @@ class SceneGeometryBuilder(
                 2 -> palette.mapSecondary
                 else -> palette.mapPrimary
             }
-            if (config.effects != "compact") {
+            if (config.effects != "compact" && runtimePerformanceTier < 2) {
                 addCircle(snapshot[cursor], snapshot[cursor + 1], dp(9f + value * 2f), color, .12f)
             }
             addCircle(snapshot[cursor], snapshot[cursor + 1], dp(4f + value), color, 1f)
@@ -209,7 +216,7 @@ class SceneGeometryBuilder(
             val progress = if (segmentCount <= 1) 0f else index.toFloat() / (segmentCount - 1)
             val color = mix(palette.snakePrimary, palette.snakeSecondary, progress)
             val radius = dp(11f) * (1f - progress * .34f)
-            if (config.effects == "luxury") {
+            if (config.effects == "luxury" && runtimePerformanceTier == 0) {
                 addCircle(snapshot[cursor], snapshot[cursor + 1], radius * 1.75f, color, .14f)
             }
             addCircle(snapshot[cursor], snapshot[cursor + 1], radius, color, 1f)
@@ -236,7 +243,7 @@ class SceneGeometryBuilder(
         if (pulseAge in 0L..620L) {
             val progress = pulseAge / 620f
             addRing(headX, headY, dp(30f) + progress * dp(165f), palette.mapPrimary, (1f - progress) * .82f)
-            if (config.effects == "luxury") {
+            if (config.effects == "luxury" && runtimePerformanceTier == 0) {
                 addRing(headX, headY, dp(20f) + progress * dp(125f), palette.mapSecondary, (1f - progress) * .51f)
             }
         }

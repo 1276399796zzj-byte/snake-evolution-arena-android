@@ -17,10 +17,10 @@ interface ArenaSceneRenderer {
         directionY: Float,
         pulseStartedMs: Long,
         shieldStartedMs: Long,
+        performanceTier: Int,
     )
 
     fun onHostResume()
     fun onHostPause()
     fun release()
 }
-

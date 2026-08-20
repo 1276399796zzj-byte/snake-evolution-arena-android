@@ -51,6 +51,10 @@ class BattleView(
     private var fpsWindowStartNanos = 0L
     private var renderedFrames = 0
     private var actualFps = 0f
+    private var loadPerformanceTier = 0
+    private var systemPerformanceTier = 0
+    private var lowFpsWindows = 0
+    private var recoveryWindows = 0
 
     private var backgroundShader: LinearGradient? = null
     private var glowShader: RadialGradient? = null
@@ -140,6 +144,10 @@ class BattleView(
         invalidate()
     }
 
+    fun setSystemPerformanceTier(tier: Int) {
+        systemPerformanceTier = tier.coerceIn(0, 2)
+    }
+
     fun resumeGame() {
         if (released || running) return
         running = true
@@ -190,6 +198,7 @@ class BattleView(
                 directionY,
                 pulseStartedMs,
                 shieldStartedMs,
+                effectivePerformanceTier(),
             )
             postInvalidateOnAnimation()
         }
@@ -417,7 +426,8 @@ class BattleView(
         paint.typeface = Typeface.create("sans", Typeface.NORMAL)
         paint.textSize = sp(10)
         paint.color = Color.rgb(152, 171, 199)
-        canvas.drawText("$actualBackendLabel  ·  ${config.targetFps} FPS  ·  ${config.quality.uppercase()}", pad + dp(52), pad + sp(35), paint)
+        val adaptiveLabel = if (effectivePerformanceTier() > 0) " · AUTO-L${effectivePerformanceTier()}" else ""
+        canvas.drawText("$actualBackendLabel  ·  ${config.targetFps} FPS  ·  ${config.quality.uppercase()}$adaptiveLabel", pad + dp(52), pad + sp(35), paint)
 
         drawBackButton(canvas, pad, pad)
 
@@ -794,10 +804,37 @@ class BattleView(
         val elapsed = now - fpsWindowStartNanos
         if (elapsed >= 700_000_000L) {
             actualFps = renderedFrames * 1_000_000_000f / elapsed
+            updateLoadPerformanceTier()
             renderedFrames = 0
             fpsWindowStartNanos = now
         }
     }
+
+    private fun updateLoadPerformanceTier() {
+        if (config.targetFps < 60 || actualFps <= 1f) return
+        val ratio = actualFps / config.targetFps
+        if (ratio < .82f) {
+            lowFpsWindows += 1
+            recoveryWindows = 0
+            val threshold = if (ratio < .68f) 2 else 4
+            if (lowFpsWindows >= threshold && loadPerformanceTier < 2) {
+                loadPerformanceTier += 1
+                lowFpsWindows = 0
+            }
+        } else if (ratio > .95f) {
+            recoveryWindows += 1
+            lowFpsWindows = 0
+            if (recoveryWindows >= 9 && loadPerformanceTier > 0) {
+                loadPerformanceTier -= 1
+                recoveryWindows = 0
+            }
+        } else {
+            lowFpsWindows = 0
+            recoveryWindows = 0
+        }
+    }
+
+    private fun effectivePerformanceTier(): Int = max(loadPerformanceTier, systemPerformanceTier)
 
     private fun configurePalette() {
         val palette = arenaPalette(config)

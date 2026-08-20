@@ -39,6 +39,7 @@ class OpenGlArenaView(
         directionY: Float,
         pulseStartedMs: Long,
         shieldStartedMs: Long,
+        performanceTier: Int,
     ) {
         arenaRenderer.submitFrame(
             snapshot,
@@ -47,6 +48,7 @@ class OpenGlArenaView(
             directionY,
             pulseStartedMs,
             shieldStartedMs,
+            performanceTier,
         )
         requestRender()
     }
@@ -84,6 +86,8 @@ class OpenGlArenaView(
         private var pendingShieldStartedMs = -10_000L
         private var renderPulseStartedMs = -10_000L
         private var renderShieldStartedMs = -10_000L
+        private var pendingPerformanceTier = 0
+        private var renderPerformanceTier = 0
         private var viewportWidth = 1
         private var viewportHeight = 1
         private var program = 0
@@ -97,6 +101,7 @@ class OpenGlArenaView(
             directionY: Float,
             pulseStartedMs: Long,
             shieldStartedMs: Long,
+            performanceTier: Int,
         ) {
             val size = snapshotSize.coerceIn(0, minOf(snapshot.size, pendingSnapshot.size))
             synchronized(lock) {
@@ -106,6 +111,7 @@ class OpenGlArenaView(
                 pendingDirectionY = directionY
                 pendingPulseStartedMs = pulseStartedMs
                 pendingShieldStartedMs = shieldStartedMs
+                pendingPerformanceTier = performanceTier
             }
         }
 
@@ -142,6 +148,7 @@ class OpenGlArenaView(
                     renderDirectionY = pendingDirectionY
                     renderPulseStartedMs = pendingPulseStartedMs
                     renderShieldStartedMs = pendingShieldStartedMs
+                    renderPerformanceTier = pendingPerformanceTier
                 }
 
                 val vertexCount = geometry.build(
@@ -154,6 +161,7 @@ class OpenGlArenaView(
                     renderPulseStartedMs,
                     renderShieldStartedMs,
                     SystemClock.elapsedRealtime(),
+                    renderPerformanceTier,
                 )
                 GLES30.glClearColor(geometry.clearRed(), geometry.clearGreen(), geometry.clearBlue(), 1f)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)

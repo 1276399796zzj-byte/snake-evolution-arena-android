@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -19,6 +20,8 @@ class BattleActivity : Activity() {
     private var sceneRenderer: ArenaSceneRenderer? = null
     private var soundtrack: ProceduralSoundtrack? = null
     private var hostResumed = false
+    private var powerManager: PowerManager? = null
+    private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -59,6 +62,7 @@ class BattleActivity : Activity() {
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
         )
         setContentView(root)
+        registerPerformanceSignals()
         if (battleConfig.music) soundtrack = ProceduralSoundtrack(battleConfig.modeId)
     }
 
@@ -71,6 +75,7 @@ class BattleActivity : Activity() {
         super.onResume()
         hostResumed = true
         keepImmersive()
+        updateSystemPerformanceTier(powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE)
         sceneRenderer?.onHostResume()
         if (::battleView.isInitialized) battleView.resumeGame()
         soundtrack?.play()
@@ -85,6 +90,9 @@ class BattleActivity : Activity() {
     }
 
     override fun onDestroy() {
+        thermalListener?.let { listener -> powerManager?.removeThermalStatusListener(listener) }
+        thermalListener = null
+        powerManager = null
         if (::battleView.isInitialized) battleView.releaseGame()
         sceneRenderer?.release()
         sceneRenderer = null
@@ -148,6 +156,28 @@ class BattleActivity : Activity() {
             OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
             note,
         )
+    }
+
+    private fun registerPerformanceSignals() {
+        val manager = getSystemService(PowerManager::class.java) ?: return
+        powerManager = manager
+        val listener = PowerManager.OnThermalStatusChangedListener { status ->
+            updateSystemPerformanceTier(status)
+        }
+        thermalListener = listener
+        manager.addThermalStatusListener(mainExecutor, listener)
+        updateSystemPerformanceTier(manager.currentThermalStatus)
+    }
+
+    private fun updateSystemPerformanceTier(thermalStatus: Int) {
+        if (!::battleView.isInitialized) return
+        val thermalTier = when {
+            thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE -> 2
+            thermalStatus >= PowerManager.THERMAL_STATUS_MODERATE -> 1
+            else -> 0
+        }
+        val powerTier = if (powerManager?.isPowerSaveMode == true) 1 else 0
+        battleView.setSystemPerformanceTier(maxOf(thermalTier, powerTier))
     }
 
     private fun installRenderer(renderer: ArenaSceneRenderer, labelOverride: String? = null) {
