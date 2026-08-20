@@ -1,19 +1,26 @@
 # 蛇域进化 Android 原生版
 
-这是与现有网页版本并行开发的 Android 原生工程。它不是 WebView 套壳：大厅使用 Kotlin/Compose，战斗核心使用 C++17，渲染层提供 Vulkan 1.1 与 OpenGL ES 双后端。
+这是与现有网页版本并行开发的 Android 原生工程。它不是 WebView 套壳：大厅与触控 HUD 使用 Kotlin 原生 View，确定性战斗核心使用 C++17，场景层提供真实 Vulkan 与 OpenGL ES 3 双后端。
 
 ## 已锁定目标
 
 - Android 10+（API 29），仅 `arm64-v8a`。
 - 竖屏大厅、沉浸式横屏战斗。
-- 30/45/60/90/120 FPS 与基于负载、温度的自适应降级。
+- 30/45/60/90/120 FPS、Surface 级高刷新率请求，以及基于实际帧率、温度和省电状态的两级特效降载。
 - Vulkan 自动选择、强制 Vulkan、强制 OpenGL ES。
-- 三张地图、三种模式、四个原型、离线 AI、技能升级、模式音乐。
+- 三张带独立动态场景的地图、三种模式、四个原型、离线 AI、减速后的技能升级、模式音乐。
 - 三档画质、三档特效、12 款原创皮肤、可编辑按键布局与触感反馈。
 
-## 构建状态
+## 已实现的渲染路径
 
-原生工程已经初始化。GitHub Actions 会安装固定版本的 SDK、NDK、CMake 与 Gradle，运行 C++/Kotlin 测试并生成 ARM64 调试 APK。不会提交本机 SDK、NDK、签名密钥或构建产物。
+- `Auto`：探测硬件 Vulkan 设备，拒绝 CPU/软件 Vulkan；不兼容或运行失败时自动回退 OpenGL ES。
+- `Vulkan`：Android Surface、Swapchain、预旋转、单 RenderPass、动态图形管线、双帧持久映射顶点缓冲、Mailbox/FIFO 呈现。
+- `OpenGL ES`：ES 3.0 着色器与单批次三角形场景绘制。
+- 最后保留 Canvas 兼容路径，确保 GPU 初始化异常时仍可退出战场而不是黑屏。
+
+## 构建与验证
+
+GitHub Actions 会安装固定版本的 SDK、NDK、CMake 与 Gradle，运行数据校验、8 项 C++ 测试、Android lint/Kotlin 测试，并使用 NDK `glslc` 生成 Vulkan SPIR-V。流水线还会检查 APK 仅含 ARM64、三张地图完整，并验证 Vulkan JNI 符号和 `libvulkan.so` 依赖后才上传调试 APK。不会提交本机 SDK、NDK、签名密钥或构建产物。
 
 ```bash
 ./scripts/android-env.sh

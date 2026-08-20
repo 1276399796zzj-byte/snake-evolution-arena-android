@@ -52,6 +52,29 @@ jobs:
           sdkmanager --list_installed
       - name: Lint, unit test and assemble debug APK
         run: ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
+      - name: Verify ARM64 renderer payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          native_lib="$RUNNER_TEMP/libsnake_engine.so"
+          entries="$RUNNER_TEMP/apk-entries.txt"
+          dynamic="$RUNNER_TEMP/native-dynamic.txt"
+          symbols="$RUNNER_TEMP/native-symbols.txt"
+          test -f "$apk"
+          unzip -Z1 "$apk" > "$entries"
+          test "$(awk '/^lib\// && !/^lib\/arm64-v8a\// { count++ } END { print count + 0 }' "$entries")" -eq 0
+          grep -q '^lib/arm64-v8a/libsnake_engine.so$' "$entries"
+          grep -q '^assets/maps/map-neon.jpg$' "$entries"
+          grep -q '^assets/maps/map-wilds.jpg$' "$entries"
+          grep -q '^assets/maps/map-lab.jpg$' "$entries"
+          unzip -p "$apk" lib/arm64-v8a/libsnake_engine.so > "$native_lib"
+          readelf -d "$native_lib" > "$dynamic"
+          nm -D "$native_lib" > "$symbols"
+          grep -q 'libvulkan.so' "$dynamic"
+          grep -q 'NativeBridge_createVulkanRenderer' "$symbols"
+          grep -q 'NativeBridge_renderVulkan' "$symbols"
+          grep -q 'NativeBridge_vulkanSupportLevel' "$symbols"
       - name: Upload ARM64 debug APK
         uses: actions/upload-artifact@v4
         with:
