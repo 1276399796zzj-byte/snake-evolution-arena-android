@@ -28,6 +28,9 @@ class BattleView(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
+    private val boldTypeface = Typeface.create("sans", Typeface.BOLD)
+    private val normalTypeface = Typeface.create("sans", Typeface.NORMAL)
+    private val hudTitle = "${config.mapName}  ·  ${config.modeName}"
     private val snapshot = FloatArray(8192)
     private val particleX = FloatArray(56) { index -> ((index * 47 + 13) % 101) / 100f }
     private val particleY = FloatArray(56) { index -> ((index * 71 + 29) % 103) / 102f }
@@ -43,6 +46,8 @@ class BattleView(
     private var worldHandle = 0L
     private var sceneRenderer: ArenaSceneRenderer? = null
     private var actualBackendLabel = "CANVAS · 兼容模式"
+    private var backendSummary = ""
+    private var backendSummaryTier = -1
     private var running = false
     private var released = false
     private var snapshotSize = 0
@@ -55,6 +60,17 @@ class BattleView(
     private var systemPerformanceTier = 0
     private var lowFpsWindows = 0
     private var recoveryWindows = 0
+    private var cachedClockSecond = Long.MIN_VALUE
+    private var cachedClockText = ""
+    private var cachedScore = -1
+    private var cachedLevel = -1
+    private var cachedScoreText = ""
+    private var cachedFps = -1
+    private var cachedFpsText = "0 FPS"
+    private var cachedEnergy = -1
+    private var cachedEnergyText = "BOOST 100%"
+    private val cooldownDisplayTenths = IntArray(3) { -1 }
+    private val cooldownDisplayText = Array(3) { "" }
 
     private var backgroundShader: LinearGradient? = null
     private var glowShader: RadialGradient? = null
@@ -141,6 +157,7 @@ class BattleView(
     fun attachSceneRenderer(renderer: ArenaSceneRenderer?, label: String) {
         sceneRenderer = renderer
         actualBackendLabel = label
+        backendSummaryTier = -1
         invalidate()
     }
 
@@ -419,27 +436,42 @@ class BattleView(
         val level = if (snapshotSize > 9) snapshot[9].toInt().coerceAtLeast(1) else 1
         val experience = if (snapshotSize > 10) snapshot[10].coerceAtLeast(0f) else 0f
         val experienceRequired = if (snapshotSize > 11) snapshot[11].coerceAtLeast(1f) else 40f
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textSize = sp(16)
         paint.color = Color.WHITE
-        canvas.drawText("${config.mapName}  ·  ${config.modeName}", pad + dp(52), pad + sp(18), paint)
-        paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+        canvas.drawText(hudTitle, pad + dp(52), pad + sp(18), paint)
+        paint.typeface = normalTypeface
         paint.textSize = sp(10)
         paint.color = Color.rgb(152, 171, 199)
-        val adaptiveLabel = if (effectivePerformanceTier() > 0) " · AUTO-L${effectivePerformanceTier()}" else ""
-        canvas.drawText("$actualBackendLabel  ·  ${config.targetFps} FPS  ·  ${config.quality.uppercase()}$adaptiveLabel", pad + dp(52), pad + sp(35), paint)
+        val performanceTier = effectivePerformanceTier()
+        if (backendSummaryTier != performanceTier) {
+            val adaptiveLabel = if (performanceTier > 0) " · AUTO-L$performanceTier" else ""
+            backendSummary = "$actualBackendLabel  ·  ${config.targetFps} FPS  ·  ${config.quality.uppercase()}$adaptiveLabel"
+            backendSummaryTier = performanceTier
+        }
+        canvas.drawText(backendSummary, pad + dp(52), pad + sp(35), paint)
 
         drawBackButton(canvas, pad, pad)
 
         val right = width - pad
         paint.textAlign = Paint.Align.RIGHT
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textSize = sp(13)
         paint.color = Color.WHITE
-        canvas.drawText("LV.$level  ·  得分 $score", right, pad + sp(16), paint)
+        if (cachedScore != score || cachedLevel != level) {
+            cachedScore = score
+            cachedLevel = level
+            cachedScoreText = "LV.$level  ·  得分 $score"
+        }
+        canvas.drawText(cachedScoreText, right, pad + sp(16), paint)
         paint.textSize = sp(10)
         paint.color = if (actualFps >= config.targetFps * .84f) mapPrimary else Color.rgb(255, 207, 74)
-        canvas.drawText("${actualFps.toInt()} FPS", right, pad + sp(33), paint)
+        val roundedFps = actualFps.toInt()
+        if (cachedFps != roundedFps) {
+            cachedFps = roundedFps
+            cachedFpsText = "$roundedFps FPS"
+        }
+        canvas.drawText(cachedFpsText, right, pad + sp(33), paint)
         paint.textAlign = Paint.Align.LEFT
 
         val barWidth = dp(140).toFloat()
@@ -452,7 +484,12 @@ class BattleView(
         canvas.drawRoundRect(barX, barY, barX + barWidth * (energy / 100f), barY + barHeight, barHeight, barHeight, paint)
         paint.textSize = sp(9)
         paint.color = Color.rgb(190, 205, 226)
-        canvas.drawText("BOOST ${energy.toInt()}%", barX, barY + dp(20), paint)
+        val roundedEnergy = energy.toInt()
+        if (cachedEnergy != roundedEnergy) {
+            cachedEnergy = roundedEnergy
+            cachedEnergyText = "BOOST $roundedEnergy%"
+        }
+        canvas.drawText(cachedEnergyText, barX, barY + dp(20), paint)
 
         val experienceY = barY + dp(27)
         paint.color = Color.argb(80, 255, 255, 255)
@@ -469,7 +506,7 @@ class BattleView(
         )
 
         paint.textAlign = Paint.Align.CENTER
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textSize = sp(10)
         paint.color = Color.argb(155, 215, 227, 242)
         canvas.drawText(modeClock(), width * .5f, height - dp(18).toFloat(), paint)
@@ -508,7 +545,7 @@ class BattleView(
         strokePaint.strokeWidth = dp(2).toFloat()
         strokePaint.color = if (boostPressed) Color.WHITE else mapSecondary
         canvas.drawCircle(boostX, boostY, boostRadius, strokePaint)
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textAlign = Paint.Align.CENTER
         paint.textSize = sp(23)
         paint.color = Color.WHITE
@@ -525,13 +562,14 @@ class BattleView(
     }
 
     private fun drawSkillButton(canvas: Canvas, index: Int, icon: String, name: String, now: Long, cooldownUntil: Long, cooldown: Long) {
-        val (x, y) = skillCenter(index)
+        val x = skillCenterX(index)
+        val y = skillCenterY(index)
         paint.color = Color.argb(145, 11, 21, 43)
         canvas.drawCircle(x, y, skillRadius, paint)
         strokePaint.strokeWidth = dp(1.5f)
         strokePaint.color = Color.argb(165, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
         canvas.drawCircle(x, y, skillRadius, strokePaint)
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textSize = sp(17)
         paint.textAlign = Paint.Align.CENTER
         paint.color = Color.WHITE
@@ -546,7 +584,14 @@ class BattleView(
             canvas.drawArc(x - skillRadius, y - skillRadius, x + skillRadius, y + skillRadius, -90f, 360f * fraction, true, paint)
             paint.textSize = sp(9)
             paint.color = Color.WHITE
-            canvas.drawText("%.1f".format((cooldownUntil - now) / 1000f), x, y + sp(3), paint)
+            val remainingTenths = (((cooldownUntil - now) + 99L) / 100L).toInt()
+            if (cooldownDisplayTenths[index] != remainingTenths) {
+                cooldownDisplayTenths[index] = remainingTenths
+                cooldownDisplayText[index] = "${remainingTenths / 10}.${remainingTenths % 10}"
+            }
+            canvas.drawText(cooldownDisplayText[index], x, y + sp(3), paint)
+        } else {
+            cooldownDisplayTenths[index] = -1
         }
     }
 
@@ -554,11 +599,11 @@ class BattleView(
         paint.color = Color.argb(222, 3, 7, 17)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.textAlign = Paint.Align.CENTER
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textSize = sp(25)
         paint.color = Color.WHITE
         canvas.drawText("选择进化模块", width * .5f, height * .19f, paint)
-        paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+        paint.typeface = normalTypeface
         paint.textSize = sp(10)
         paint.color = Color.rgb(157, 177, 205)
         canvas.drawText("每次升级需要更多经验，选择期间战斗暂停", width * .5f, height * .19f + dp(24), paint)
@@ -576,11 +621,11 @@ class BattleView(
             paint.textSize = sp(25)
             paint.color = if (choice == 1) mapPrimary else Color.WHITE
             canvas.drawText(UPGRADE_ICONS[choice], (bounds[0] + bounds[2]) * .5f, bounds[1] + dp(48), paint)
-            paint.typeface = Typeface.create("sans", Typeface.BOLD)
+            paint.typeface = boldTypeface
             paint.textSize = sp(15)
             paint.color = Color.WHITE
             canvas.drawText(names[choice], (bounds[0] + bounds[2]) * .5f, bounds[1] + dp(82), paint)
-            paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+            paint.typeface = normalTypeface
             paint.textSize = sp(10)
             paint.color = Color.rgb(165, 185, 211)
             canvas.drawText(descriptions[choice], (bounds[0] + bounds[2]) * .5f, bounds[1] + dp(106), paint)
@@ -593,14 +638,14 @@ class BattleView(
         paint.color = Color.argb(224, 3, 7, 17)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.textAlign = Paint.Align.CENTER
-        paint.typeface = Typeface.create("sans", Typeface.BOLD)
+        paint.typeface = boldTypeface
         paint.textSize = sp(38)
         paint.color = if (victory) mapPrimary else Color.rgb(255, 104, 126)
         canvas.drawText(if (victory) "作战完成" else "战蛇失活", width * .5f, height * .40f, paint)
         paint.textSize = sp(16)
         paint.color = Color.WHITE
         canvas.drawText("最终得分 ${snapshot.getOrElse(3) { 0f }.toInt()}  ·  等级 ${snapshot.getOrElse(9) { 1f }.toInt()}", width * .5f, height * .50f, paint)
-        paint.typeface = Typeface.create("sans", Typeface.NORMAL)
+        paint.typeface = normalTypeface
         paint.textSize = sp(11)
         paint.color = Color.rgb(157, 177, 205)
         canvas.drawText("轻触任意位置返回竖屏大厅", width * .5f, height * .59f, paint)
@@ -762,20 +807,25 @@ class BattleView(
 
     private fun hitSkill(x: Float, y: Float): Int {
         for (index in 0..2) {
-            val center = skillCenter(index)
-            if (distance(x, y, center.first, center.second) <= skillRadius * 1.35f) return index
+            if (distance(x, y, skillCenterX(index), skillCenterY(index)) <= skillRadius * 1.35f) return index
         }
         return -1
     }
 
-    private fun skillCenter(index: Int): Pair<Float, Float> {
+    private fun skillCenterX(index: Int): Float {
         val boostX = boostCenterX()
         val direction = if (config.leftHanded) 1f else -1f
         return when (index) {
-            0 -> Pair(boostX + direction * dp(76), height - dp(76).toFloat())
-            1 -> Pair(boostX + direction * dp(61), height - dp(142).toFloat())
-            else -> Pair(boostX, height - dp(166).toFloat())
+            0 -> boostX + direction * dp(76)
+            1 -> boostX + direction * dp(61)
+            else -> boostX
         }
+    }
+
+    private fun skillCenterY(index: Int): Float = when (index) {
+        0 -> height - dp(76).toFloat()
+        1 -> height - dp(142).toFloat()
+        else -> height - dp(166).toFloat()
     }
 
     private fun resetControlPositions() {
@@ -791,16 +841,28 @@ class BattleView(
 
     private fun modeClock(): String {
         val elapsedSeconds = if (snapshotSize > 7) snapshot[7].toLong().coerceAtLeast(0L) else 0L
+        if (cachedClockSecond == elapsedSeconds) return cachedClockText
+        cachedClockSecond = elapsedSeconds
         val total = when (config.modeId) {
             "blitz" -> 180L
             "expedition" -> 600L
             else -> -1L
         }
-        if (total < 0L) return "无尽猎场  ·  ${formatTime(elapsedSeconds)}"
-        return "剩余 ${formatTime((total - elapsedSeconds).coerceAtLeast(0L))}"
+        cachedClockText = if (total < 0L) {
+            "无尽猎场  ·  ${formatTime(elapsedSeconds)}"
+        } else {
+            "剩余 ${formatTime((total - elapsedSeconds).coerceAtLeast(0L))}"
+        }
+        return cachedClockText
     }
 
-    private fun formatTime(seconds: Long): String = "%02d:%02d".format(seconds / 60L, seconds % 60L)
+    private fun formatTime(seconds: Long): String {
+        val minutes = seconds / 60L
+        val remainder = seconds % 60L
+        val minuteText = if (minutes < 10L) "0$minutes" else minutes.toString()
+        val secondText = if (remainder < 10L) "0$remainder" else remainder.toString()
+        return "$minuteText:$secondText"
+    }
 
     private fun updateFps() {
         val now = System.nanoTime()

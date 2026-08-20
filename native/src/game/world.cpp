@@ -317,7 +317,9 @@ void World::activate_ability(const std::uint32_t ability) {
         180.0F,
         460.0F);
     const float pulse_radius_squared = pulse_radius * pulse_radius;
+    std::size_t absorbed_food = 0U;
     for (auto& food : foods_) {
+        if (absorbed_food >= 5U) break;
         if ((food.position - player_.position).length_squared() > pulse_radius_squared) continue;
         const std::uint32_t raw_value = food.value;
         const auto score_value = static_cast<std::uint32_t>(std::max(
@@ -333,6 +335,7 @@ void World::activate_ability(const std::uint32_t ability) {
             std::round(static_cast<float>(raw_value) * config_.experience_multiplier)));
         add_experience(experience_value);
         respawn_food(food);
+        absorbed_food += 1U;
     }
 
     for (std::size_t index = 0; index < bots_.size(); ++index) {
