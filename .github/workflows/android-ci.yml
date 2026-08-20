@@ -84,8 +84,8 @@ jobs:
           grep -q 'VulkanBridge_nativeCreateRenderer' "$vulkan_symbols"
           grep -q 'VulkanBridge_nativeRender' "$vulkan_symbols"
           grep -q 'VulkanBridge_nativeSupportLevel' "$vulkan_symbols"
-          readelf -lW "$engine_lib" | grep ' LOAD ' | grep -q '0x4000'
-          readelf -lW "$vulkan_lib" | grep ' LOAD ' | grep -q '0x4000'
+          readelf -lW "$engine_lib" | awk '$1 == "LOAD" && $NF == "0x4000" { found=1 } END { exit !found }'
+          readelf -lW "$vulkan_lib" | awk '$1 == "LOAD" && $NF == "0x4000" { found=1 } END { exit !found }'
       - name: Upload ARM64 debug APK
         uses: actions/upload-artifact@v4
         with:

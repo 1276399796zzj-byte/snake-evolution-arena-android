@@ -73,7 +73,10 @@ if(ANDROID)
         src/render/vulkan_renderer.cpp
     )
     add_dependencies(snake_vulkan snake_vulkan_shaders)
-    target_include_directories(snake_vulkan PRIVATE "${SNAKE_SHADER_OUTPUT_DIR}")
+    target_include_directories(snake_vulkan PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNAKE_SHADER_OUTPUT_DIR}"
+    )
     target_link_libraries(snake_vulkan PRIVATE android log vulkan)
     target_compile_options(snake_vulkan PRIVATE -Wall -Wextra -Werror)
 else()
