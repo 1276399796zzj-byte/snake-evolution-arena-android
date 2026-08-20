@@ -41,10 +41,13 @@ class BattleView(
     )
 
     private var worldHandle = 0L
+    private var sceneRenderer: ArenaSceneRenderer? = null
+    private var actualBackendLabel = "CANVAS · 兼容模式"
     private var running = false
     private var released = false
     private var snapshotSize = 0
-    private var lastRenderedFrameNanos = 0L
+    private var lastChoreographerFrameNanos = 0L
+    private var renderAccumulatorNanos = 0L
     private var fpsWindowStartNanos = 0L
     private var renderedFrames = 0
     private var actualFps = 0f
@@ -127,7 +130,14 @@ class BattleView(
             when (config.aiStrength) { "rookie" -> 0; "nightmare" -> 2; else -> 1 },
             when (config.archetypeId) { "bulwark" -> 1; "oracle" -> 2; "scavenger" -> 3; else -> 0 },
         )
-        lastRenderedFrameNanos = 0L
+        lastChoreographerFrameNanos = 0L
+        renderAccumulatorNanos = 0L
+    }
+
+    fun attachSceneRenderer(renderer: ArenaSceneRenderer?, label: String) {
+        sceneRenderer = renderer
+        actualBackendLabel = label
+        invalidate()
     }
 
     fun resumeGame() {
@@ -158,8 +168,29 @@ class BattleView(
             val boosting = boostPressed || SystemClock.elapsedRealtime() < dashUntilMs
             NativeBridge.advanceWorld(worldHandle, frameTimeNanos, directionX, directionY, boosting)
         }
-        if (lastRenderedFrameNanos == 0L || frameTimeNanos - lastRenderedFrameNanos >= (frameBudgetNanos * .84f).toLong()) {
-            lastRenderedFrameNanos = frameTimeNanos
+        val shouldRender = if (lastChoreographerFrameNanos == 0L) {
+            true
+        } else {
+            val delta = (frameTimeNanos - lastChoreographerFrameNanos).coerceIn(0L, 100_000_000L)
+            renderAccumulatorNanos += delta
+            if (renderAccumulatorNanos >= frameBudgetNanos) {
+                renderAccumulatorNanos %= frameBudgetNanos
+                true
+            } else {
+                false
+            }
+        }
+        lastChoreographerFrameNanos = frameTimeNanos
+        if (shouldRender) {
+            if (worldHandle != 0L) snapshotSize = NativeBridge.writeWorldSnapshot(worldHandle, snapshot)
+            sceneRenderer?.submitFrame(
+                snapshot,
+                snapshotSize,
+                directionX,
+                directionY,
+                pulseStartedMs,
+                shieldStartedMs,
+            )
             postInvalidateOnAnimation()
         }
         Choreographer.getInstance().postFrameCallback(this)
@@ -167,10 +198,11 @@ class BattleView(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        drawArena(canvas)
-        if (worldHandle != 0L) snapshotSize = NativeBridge.writeWorldSnapshot(worldHandle, snapshot)
-        if (snapshotSize >= SNAPSHOT_HEADER_SIZE) drawWorld(canvas)
-        drawSkillEffects(canvas)
+        if (sceneRenderer == null) {
+            drawArena(canvas)
+            if (snapshotSize >= SNAPSHOT_HEADER_SIZE) drawWorld(canvas)
+            drawSkillEffects(canvas)
+        }
         drawHud(canvas)
         drawControls(canvas)
         if (isUpgradePending()) drawUpgradeOverlay(canvas)
@@ -385,12 +417,7 @@ class BattleView(
         paint.typeface = Typeface.create("sans", Typeface.NORMAL)
         paint.textSize = sp(10)
         paint.color = Color.rgb(152, 171, 199)
-        val backendName = when (config.backend) {
-            "vulkan" -> "VULKAN"
-            "opengl" -> "OPENGL ES"
-            else -> "AUTO GPU"
-        }
-        canvas.drawText("$backendName  ·  ${config.targetFps} FPS  ·  ${config.quality.uppercase()}", pad + dp(52), pad + sp(35), paint)
+        canvas.drawText("$actualBackendLabel  ·  ${config.targetFps} FPS  ·  ${config.quality.uppercase()}", pad + dp(52), pad + sp(35), paint)
 
         drawBackButton(canvas, pad, pad)
 
@@ -773,42 +800,11 @@ class BattleView(
     }
 
     private fun configurePalette() {
-        when (config.mapId) {
-            "wilds" -> {
-                mapPrimary = Color.rgb(185, 255, 107)
-                mapSecondary = Color.rgb(255, 114, 199)
-            }
-            "lab" -> {
-                mapPrimary = Color.rgb(255, 207, 74)
-                mapSecondary = Color.rgb(255, 90, 119)
-            }
-        }
-        when {
-            config.skinId.contains("dragon") -> {
-                snakePrimary = Color.rgb(80, 224, 255)
-                snakeSecondary = Color.rgb(71, 132, 255)
-            }
-            config.skinId.contains("golden") -> {
-                snakePrimary = Color.rgb(255, 235, 143)
-                snakeSecondary = Color.rgb(255, 160, 42)
-            }
-            config.skinId.contains("emerald") || config.skinId.contains("prism") -> {
-                snakePrimary = Color.rgb(158, 255, 114)
-                snakeSecondary = Color.rgb(68, 211, 166)
-            }
-            config.skinId.contains("acid") || config.skinId.contains("spore") -> {
-                snakePrimary = Color.rgb(195, 255, 63)
-                snakeSecondary = Color.rgb(142, 73, 255)
-            }
-            config.skinId.contains("red") -> {
-                snakePrimary = Color.rgb(255, 100, 89)
-                snakeSecondary = Color.rgb(255, 194, 74)
-            }
-            config.skinId.contains("ghost") || config.skinId.contains("tortoise") -> {
-                snakePrimary = Color.rgb(162, 122, 255)
-                snakeSecondary = Color.rgb(49, 75, 120)
-            }
-        }
+        val palette = arenaPalette(config)
+        mapPrimary = palette.mapPrimary
+        mapSecondary = palette.mapSecondary
+        snakePrimary = palette.snakePrimary
+        snakeSecondary = palette.snakeSecondary
     }
 
     private fun haptic(feedback: Int) {

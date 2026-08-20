@@ -24,10 +24,53 @@ target_compile_options(snake_core PRIVATE -Wall -Wextra -Werror)
 set_target_properties(snake_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(ANDROID)
+    if(WIN32)
+        set(SNAKE_NDK_HOST_TAG windows-x86_64)
+        set(SNAKE_GLSLC_NAME glslc.exe)
+    elseif(APPLE)
+        set(SNAKE_NDK_HOST_TAG darwin-x86_64)
+        set(SNAKE_GLSLC_NAME glslc)
+    else()
+        set(SNAKE_NDK_HOST_TAG linux-x86_64)
+        set(SNAKE_GLSLC_NAME glslc)
+    endif()
+    set(SNAKE_GLSLC
+        "${CMAKE_ANDROID_NDK}/shader-tools/${SNAKE_NDK_HOST_TAG}/${SNAKE_GLSLC_NAME}"
+    )
+    if(NOT EXISTS "${SNAKE_GLSLC}")
+        message(FATAL_ERROR "Android NDK glslc was not found at ${SNAKE_GLSLC}")
+    endif()
+
+    set(SNAKE_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
+    file(MAKE_DIRECTORY "${SNAKE_SHADER_OUTPUT_DIR}")
+    add_custom_command(
+        OUTPUT "${SNAKE_SHADER_OUTPUT_DIR}/arena.vert.inc"
+        COMMAND "${SNAKE_GLSLC}" -O -mfmt=c
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/arena.vert"
+            -o "${SNAKE_SHADER_OUTPUT_DIR}/arena.vert.inc"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/arena.vert"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${SNAKE_SHADER_OUTPUT_DIR}/arena.frag.inc"
+        COMMAND "${SNAKE_GLSLC}" -O -mfmt=c
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/arena.frag"
+            -o "${SNAKE_SHADER_OUTPUT_DIR}/arena.frag.inc"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/arena.frag"
+        VERBATIM
+    )
+    add_custom_target(snake_vulkan_shaders DEPENDS
+        "${SNAKE_SHADER_OUTPUT_DIR}/arena.vert.inc"
+        "${SNAKE_SHADER_OUTPUT_DIR}/arena.frag.inc"
+    )
+
     add_library(snake_engine SHARED
         ../app/src/main/cpp/jni_bridge.cpp
+        src/render/vulkan_renderer.cpp
     )
-    target_link_libraries(snake_engine PRIVATE snake_core android log)
+    add_dependencies(snake_engine snake_vulkan_shaders)
+    target_include_directories(snake_engine PRIVATE "${SNAKE_SHADER_OUTPUT_DIR}")
+    target_link_libraries(snake_engine PRIVATE snake_core android log vulkan)
     target_compile_options(snake_engine PRIVATE -Wall -Wextra -Werror)
 else()
     if(SNAKE_BUILD_TESTS)

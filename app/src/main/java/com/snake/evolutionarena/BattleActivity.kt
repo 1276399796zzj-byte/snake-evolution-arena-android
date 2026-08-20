@@ -8,11 +8,17 @@ import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.widget.FrameLayout
+import android.widget.Toast
 import kotlin.math.abs
 
 class BattleActivity : Activity() {
+    private lateinit var root: FrameLayout
     private lateinit var battleView: BattleView
+    private lateinit var battleConfig: BattleConfig
+    private var sceneRenderer: ArenaSceneRenderer? = null
     private var soundtrack: ProceduralSoundtrack? = null
+    private var hostResumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -24,7 +30,7 @@ class BattleActivity : Activity() {
         val targetFps = intent.getIntExtra(EXTRA_TARGET_FPS, 60).coerceIn(30, 120)
         requestBestRefreshRate(targetFps)
 
-        val battleConfig = BattleConfig(
+        battleConfig = BattleConfig(
             mapId = intent.getStringExtra(EXTRA_MAP) ?: "neon",
             mapName = intent.getStringExtra(EXTRA_MAP_NAME) ?: "霓虹竞技场",
             modeId = intent.getStringExtra(EXTRA_MODE) ?: "blitz",
@@ -41,12 +47,18 @@ class BattleActivity : Activity() {
             haptics = intent.getBooleanExtra(EXTRA_HAPTICS, true),
             music = intent.getBooleanExtra(EXTRA_MUSIC, true),
         )
+        root = FrameLayout(this)
         battleView = BattleView(
             context = this,
             config = battleConfig,
             onExit = { finishAfterTransition() },
         )
-        setContentView(battleView)
+        installInitialRenderer()
+        root.addView(
+            battleView,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+        )
+        setContentView(root)
         if (battleConfig.music) soundtrack = ProceduralSoundtrack(battleConfig.modeId)
     }
 
@@ -57,19 +69,25 @@ class BattleActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        hostResumed = true
         keepImmersive()
+        sceneRenderer?.onHostResume()
         if (::battleView.isInitialized) battleView.resumeGame()
         soundtrack?.play()
     }
 
     override fun onPause() {
+        hostResumed = false
         if (::battleView.isInitialized) battleView.pauseGame()
+        sceneRenderer?.onHostPause()
         soundtrack?.pause()
         super.onPause()
     }
 
     override fun onDestroy() {
         if (::battleView.isInitialized) battleView.releaseGame()
+        sceneRenderer?.release()
+        sceneRenderer = null
         soundtrack?.release()
         soundtrack = null
         super.onDestroy()
@@ -110,7 +128,62 @@ class BattleActivity : Activity() {
             ) 0f else 1000f
             ratePenalty + resolutionPenalty
         } ?: return
-        window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = best.modeId
+            preferredRefreshRate = targetFps.toFloat()
+        }
+    }
+
+    private fun installInitialRenderer() {
+        val requested = battleConfig.backend
+        if (requested != "opengl" && NativeBridge.vulkanSupportLevel() > 0) {
+            val deviceName = NativeBridge.vulkanDeviceName()
+            installRenderer(
+                VulkanArenaView(this, battleConfig, deviceName, ::handleRendererFailure),
+            )
+            return
+        }
+        val note = if (requested == "vulkan") "OPENGL ES 3 · VK不可用" else null
+        installRenderer(
+            OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
+            note,
+        )
+    }
+
+    private fun installRenderer(renderer: ArenaSceneRenderer, labelOverride: String? = null) {
+        val previous = sceneRenderer
+        if (previous != null) {
+            previous.onHostPause()
+            root.removeView(previous.view)
+            previous.release()
+        }
+        sceneRenderer = renderer
+        root.addView(
+            renderer.view,
+            0,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+        )
+        battleView.attachSceneRenderer(renderer, labelOverride ?: renderer.backendLabel)
+        if (hostResumed) renderer.onHostResume()
+    }
+
+    private fun handleRendererFailure(reason: String) {
+        if (isFinishing || isDestroyed) return
+        if (sceneRenderer is VulkanArenaView) {
+            Toast.makeText(this, reason, Toast.LENGTH_SHORT).show()
+            installRenderer(
+                OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
+                "OPENGL ES 3 · 自动回退",
+            )
+        } else {
+            Toast.makeText(this, "$reason，已启用兼容渲染", Toast.LENGTH_SHORT).show()
+            val previous = sceneRenderer
+            previous?.onHostPause()
+            if (previous != null) root.removeView(previous.view)
+            previous?.release()
+            sceneRenderer = null
+            battleView.attachSceneRenderer(null, "CANVAS · 兼容模式")
+        }
     }
 
     companion object {
