@@ -339,7 +339,7 @@ private:
     }
 
     bool create_device() {
-        constexpr float queue_priority = 1f;
+        constexpr float queue_priority = 1.0F;
         VkDeviceQueueCreateInfo queue_info{};
         queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_info.queueFamilyIndex = queue_family_index_;
@@ -629,7 +629,7 @@ private:
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.cullMode = VK_CULL_MODE_NONE;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        rasterizer.lineWidth = 1f;
+        rasterizer.lineWidth = 1.0F;
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -734,7 +734,7 @@ private:
         clear_value.color.float32[0] = clear_red;
         clear_value.color.float32[1] = clear_green;
         clear_value.color.float32[2] = clear_blue;
-        clear_value.color.float32[3] = 1f;
+        clear_value.color.float32[3] = 1.0F;
         VkRenderPassBeginInfo render_pass_info{};
         render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         render_pass_info.renderPass = render_pass_;
@@ -746,8 +746,8 @@ private:
         VkViewport viewport{};
         viewport.width = static_cast<float>(extent_.width);
         viewport.height = static_cast<float>(extent_.height);
-        viewport.minDepth = 0f;
-        viewport.maxDepth = 1f;
+        viewport.minDepth = 0.0F;
+        viewport.maxDepth = 1.0F;
         VkRect2D scissor{};
         scissor.extent = extent_;
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
