@@ -31,7 +31,7 @@ class BattleActivity : Activity() {
         keepImmersive()
 
         val targetFps = intent.getIntExtra(EXTRA_TARGET_FPS, 60).coerceIn(30, 120)
-        requestBestRefreshRate(targetFps)
+        runCatching { requestBestRefreshRate(targetFps) }
 
         battleConfig = BattleConfig(
             mapId = intent.getStringExtra(EXTRA_MAP) ?: "neon",
@@ -41,7 +41,7 @@ class BattleActivity : Activity() {
             archetypeId = intent.getStringExtra(EXTRA_ARCHETYPE) ?: "viper",
             skinId = intent.getStringExtra(EXTRA_SKIN) ?: "neon-pulse",
             aiStrength = intent.getStringExtra(EXTRA_AI_STRENGTH) ?: "veteran",
-            backend = intent.getStringExtra(EXTRA_BACKEND) ?: "auto",
+            backend = intent.getStringExtra(EXTRA_BACKEND) ?: "opengl",
             targetFps = targetFps,
             quality = intent.getStringExtra(EXTRA_QUALITY) ?: "balanced",
             effects = intent.getStringExtra(EXTRA_EFFECTS) ?: "standard",
@@ -62,8 +62,11 @@ class BattleActivity : Activity() {
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
         )
         setContentView(root)
-        registerPerformanceSignals()
-        if (battleConfig.music) soundtrack = ProceduralSoundtrack(battleConfig.modeId)
+        runCatching { registerPerformanceSignals() }
+        if (battleConfig.music) soundtrack = runCatching {
+            ProceduralSoundtrack(battleConfig.modeId)
+        }.getOrNull()
+        root.postDelayed({ markBattleBootSuccessful() }, BATTLE_BOOT_GUARD_MS)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -90,7 +93,9 @@ class BattleActivity : Activity() {
     }
 
     override fun onDestroy() {
-        thermalListener?.let { listener -> powerManager?.removeThermalStatusListener(listener) }
+        thermalListener?.let { listener ->
+            runCatching { powerManager?.removeThermalStatusListener(listener) }
+        }
         thermalListener = null
         powerManager = null
         if (::battleView.isInitialized) battleView.releaseGame()
@@ -144,18 +149,30 @@ class BattleActivity : Activity() {
 
     private fun installInitialRenderer() {
         val requested = battleConfig.backend
-        if (requested != "opengl" && NativeBridge.vulkanSupportLevel() > 0) {
-            val deviceName = NativeBridge.vulkanDeviceName()
-            installRenderer(
-                VulkanArenaView(this, battleConfig, deviceName, ::handleRendererFailure),
-            )
-            return
+        if (requested == "vulkan" && VulkanBridge.supportLevel() > 0) {
+            val installed = runCatching {
+                installRenderer(
+                    VulkanArenaView(
+                        this,
+                        battleConfig,
+                        VulkanBridge.deviceName(),
+                        ::handleRendererFailure,
+                    ),
+                )
+            }.isSuccess
+            if (installed) return
         }
         val note = if (requested == "vulkan") "OPENGL ES 3 · VK不可用" else null
-        installRenderer(
-            OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
-            note,
-        )
+        val installed = runCatching {
+            installRenderer(
+                OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
+                note ?: if (requested == "auto") "OPENGL ES 3 · 稳定自动" else null,
+            )
+        }.isSuccess
+        if (!installed) {
+            sceneRenderer = null
+            battleView.attachSceneRenderer(null, "CANVAS · 安全模式")
+        }
     }
 
     private fun registerPerformanceSignals() {
@@ -201,19 +218,33 @@ class BattleActivity : Activity() {
         if (isFinishing || isDestroyed) return
         if (sceneRenderer is VulkanArenaView) {
             Toast.makeText(this, reason, Toast.LENGTH_SHORT).show()
-            installRenderer(
-                OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
-                "OPENGL ES 3 · 自动回退",
-            )
+            val installed = runCatching {
+                installRenderer(
+                    OpenGlArenaView(this, battleConfig, ::handleRendererFailure),
+                    "OPENGL ES 3 · 自动回退",
+                )
+            }.isSuccess
+            if (!installed) useCanvasRenderer("CANVAS · 安全回退")
         } else {
             Toast.makeText(this, "$reason，已启用兼容渲染", Toast.LENGTH_SHORT).show()
-            val previous = sceneRenderer
-            previous?.onHostPause()
-            if (previous != null) root.removeView(previous.view)
-            previous?.release()
-            sceneRenderer = null
-            battleView.attachSceneRenderer(null, "CANVAS · 兼容模式")
+            useCanvasRenderer("CANVAS · 兼容模式")
         }
+    }
+
+    private fun useCanvasRenderer(label: String) {
+        val previous = sceneRenderer
+        runCatching { previous?.onHostPause() }
+        if (previous != null) runCatching { root.removeView(previous.view) }
+        runCatching { previous?.release() }
+        sceneRenderer = null
+        battleView.attachSceneRenderer(null, label)
+    }
+
+    private fun markBattleBootSuccessful() {
+        if (isFinishing || isDestroyed) return
+        getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
+            .putBoolean("battle_boot_pending", false)
+            .apply()
     }
 
     companion object {
@@ -232,6 +263,7 @@ class BattleActivity : Activity() {
         const val EXTRA_LEFT_HANDED = "left_handed"
         const val EXTRA_HAPTICS = "haptics"
         const val EXTRA_MUSIC = "music"
+        private const val BATTLE_BOOT_GUARD_MS = 4_000L
     }
 }
 

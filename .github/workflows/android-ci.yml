@@ -57,24 +57,35 @@ jobs:
         run: |
           set -euo pipefail
           apk="app/build/outputs/apk/debug/app-debug.apk"
-          native_lib="$RUNNER_TEMP/libsnake_engine.so"
+          engine_lib="$RUNNER_TEMP/libsnake_engine.so"
+          vulkan_lib="$RUNNER_TEMP/libsnake_vulkan.so"
           entries="$RUNNER_TEMP/apk-entries.txt"
-          dynamic="$RUNNER_TEMP/native-dynamic.txt"
-          symbols="$RUNNER_TEMP/native-symbols.txt"
+          engine_dynamic="$RUNNER_TEMP/engine-dynamic.txt"
+          vulkan_dynamic="$RUNNER_TEMP/vulkan-dynamic.txt"
+          engine_symbols="$RUNNER_TEMP/engine-symbols.txt"
+          vulkan_symbols="$RUNNER_TEMP/vulkan-symbols.txt"
           test -f "$apk"
           unzip -Z1 "$apk" > "$entries"
           test "$(awk '/^lib\// && !/^lib\/arm64-v8a\// { count++ } END { print count + 0 }' "$entries")" -eq 0
           grep -q '^lib/arm64-v8a/libsnake_engine.so$' "$entries"
+          grep -q '^lib/arm64-v8a/libsnake_vulkan.so$' "$entries"
           grep -q '^assets/maps/map-neon.jpg$' "$entries"
           grep -q '^assets/maps/map-wilds.jpg$' "$entries"
           grep -q '^assets/maps/map-lab.jpg$' "$entries"
-          unzip -p "$apk" lib/arm64-v8a/libsnake_engine.so > "$native_lib"
-          readelf -d "$native_lib" > "$dynamic"
-          nm -D "$native_lib" > "$symbols"
-          grep -q 'libvulkan.so' "$dynamic"
-          grep -q 'NativeBridge_createVulkanRenderer' "$symbols"
-          grep -q 'NativeBridge_renderVulkan' "$symbols"
-          grep -q 'NativeBridge_vulkanSupportLevel' "$symbols"
+          unzip -p "$apk" lib/arm64-v8a/libsnake_engine.so > "$engine_lib"
+          unzip -p "$apk" lib/arm64-v8a/libsnake_vulkan.so > "$vulkan_lib"
+          readelf -d "$engine_lib" > "$engine_dynamic"
+          readelf -d "$vulkan_lib" > "$vulkan_dynamic"
+          nm -D "$engine_lib" > "$engine_symbols"
+          nm -D "$vulkan_lib" > "$vulkan_symbols"
+          ! grep -q 'libvulkan.so' "$engine_dynamic"
+          grep -q 'libvulkan.so' "$vulkan_dynamic"
+          grep -q 'NativeBridge_createWorld' "$engine_symbols"
+          grep -q 'VulkanBridge_nativeCreateRenderer' "$vulkan_symbols"
+          grep -q 'VulkanBridge_nativeRender' "$vulkan_symbols"
+          grep -q 'VulkanBridge_nativeSupportLevel' "$vulkan_symbols"
+          readelf -lW "$engine_lib" | grep ' LOAD ' | grep -q '0x4000'
+          readelf -lW "$vulkan_lib" | grep ' LOAD ' | grep -q '0x4000'
       - name: Upload ARM64 debug APK
         uses: actions/upload-artifact@v4
         with:

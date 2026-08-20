@@ -70,7 +70,7 @@ class VulkanArenaView(
             if (released || !surface.isValid) return@post
             surfaceWidth = width
             surfaceHeight = height
-            nativeHandle = NativeBridge.createVulkanRenderer(surface, width, height)
+            nativeHandle = VulkanBridge.createRenderer(surface, width, height)
             if (nativeHandle == 0L) {
                 fail("Vulkan Surface/Swapchain 初始化失败，已回退 OpenGL ES")
             } else {
@@ -85,7 +85,7 @@ class VulkanArenaView(
             surfaceWidth = width.coerceAtLeast(1)
             surfaceHeight = height.coerceAtLeast(1)
             if (nativeHandle != 0L) {
-                NativeBridge.resizeVulkanRenderer(nativeHandle, surfaceWidth, surfaceHeight)
+                VulkanBridge.resizeRenderer(nativeHandle, surfaceWidth, surfaceHeight)
             }
         }
     }
@@ -177,7 +177,7 @@ class VulkanArenaView(
                 SystemClock.elapsedRealtime(),
                 renderPerformanceTier,
             )
-            val succeeded = NativeBridge.renderVulkan(
+            val succeeded = VulkanBridge.render(
                 nativeHandle,
                 geometry.vertices,
                 vertexCount,
@@ -199,7 +199,7 @@ class VulkanArenaView(
 
     private fun destroyNativeRenderer() {
         if (nativeHandle == 0L) return
-        NativeBridge.destroyVulkanRenderer(nativeHandle)
+        VulkanBridge.destroyRenderer(nativeHandle)
         nativeHandle = 0L
     }
 

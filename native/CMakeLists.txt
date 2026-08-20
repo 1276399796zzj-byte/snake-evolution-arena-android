@@ -64,14 +64,18 @@ if(ANDROID)
         "${SNAKE_SHADER_OUTPUT_DIR}/arena.frag.inc"
     )
 
-    add_library(snake_engine SHARED
-        ../app/src/main/cpp/jni_bridge.cpp
+    add_library(snake_engine SHARED ../app/src/main/cpp/jni_bridge.cpp)
+    target_link_libraries(snake_engine PRIVATE snake_core)
+    target_compile_options(snake_engine PRIVATE -Wall -Wextra -Werror)
+
+    add_library(snake_vulkan SHARED
+        ../app/src/main/cpp/vulkan_jni_bridge.cpp
         src/render/vulkan_renderer.cpp
     )
-    add_dependencies(snake_engine snake_vulkan_shaders)
-    target_include_directories(snake_engine PRIVATE "${SNAKE_SHADER_OUTPUT_DIR}")
-    target_link_libraries(snake_engine PRIVATE snake_core android log vulkan)
-    target_compile_options(snake_engine PRIVATE -Wall -Wextra -Werror)
+    add_dependencies(snake_vulkan snake_vulkan_shaders)
+    target_include_directories(snake_vulkan PRIVATE "${SNAKE_SHADER_OUTPUT_DIR}")
+    target_link_libraries(snake_vulkan PRIVATE android log vulkan)
+    target_compile_options(snake_vulkan PRIVATE -Wall -Wextra -Werror)
 else()
     if(SNAKE_BUILD_TESTS)
         enable_testing()

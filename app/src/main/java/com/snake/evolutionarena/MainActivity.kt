@@ -1,6 +1,7 @@
 package com.snake.evolutionarena
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Canvas
@@ -9,6 +10,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -17,8 +19,9 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -31,7 +34,6 @@ class MainActivity : Activity() {
     private val backgroundColor = Color.rgb(5, 9, 21)
     private val surfaceColor = Color.rgb(12, 21, 41)
     private val cyan = Color.rgb(82, 246, 255)
-    private val violet = Color.rgb(155, 92, 255)
     private val primaryText = Color.rgb(245, 250, 255)
     private val mutedText = Color.rgb(145, 161, 189)
     private val borderColor = Color.rgb(42, 58, 88)
@@ -43,7 +45,7 @@ class MainActivity : Activity() {
     private lateinit var selectedSkin: Skin
 
     private var aiStrength = "veteran"
-    private var backend = "auto"
+    private var backend = "opengl"
     private var targetFps = "120"
     private var quality = "balanced"
     private var effects = "standard"
@@ -76,7 +78,15 @@ class MainActivity : Activity() {
             it.id == preferences.getString("skin", "neon-pulse")
         } ?: catalog.skins.first()
         aiStrength = preferences.getString("ai", "veteran") ?: "veteran"
-        backend = preferences.getString("backend", "auto") ?: "auto"
+        val savedBackend = preferences.getString("backend", "opengl") ?: "opengl"
+        val interruptedBattleBoot = preferences.getBoolean("battle_boot_pending", false)
+        backend = if (preferences.getInt("settings_revision", 0) < SETTINGS_REVISION || interruptedBattleBoot) {
+            // Existing builds could select Vulkan before the battle safety layer was installed.
+            // Migrate once to the stable renderer; Vulkan remains available as an explicit choice.
+            "opengl"
+        } else {
+            savedBackend
+        }
         targetFps = preferences.getString("fps", "120") ?: "120"
         quality = preferences.getString("quality", "balanced") ?: "balanced"
         effects = preferences.getString("effects", "standard") ?: "standard"
@@ -84,6 +94,11 @@ class MainActivity : Activity() {
         leftHanded = preferences.getBoolean("left_handed", false)
         haptics = preferences.getBoolean("haptics", true)
         music = preferences.getBoolean("music", true)
+        preferences.edit()
+            .putInt("settings_revision", SETTINGS_REVISION)
+            .putString("backend", backend)
+            .putBoolean("battle_boot_pending", false)
+            .apply()
 
         setContentView(buildLobby())
     }
@@ -191,36 +206,9 @@ class MainActivity : Activity() {
         content.addView(section("05", "外观实验室", "12 款原创皮肤"))
         content.addView(buildSkinGrid())
 
-        content.addView(space(24))
-        content.addView(section("06", "画面与操作", "保存到本机"))
-        val settingsPanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(16), dp(14), dp(16))
-            background = rounded(surfaceColor, dp(18).toFloat(), borderColor)
-        }
-        settingsPanel.addView(settingTitle("图形接口", "自动模式会优先 Vulkan，不兼容时回退 OpenGL ES"))
-        settingsPanel.addView(segmented(listOf("自动" to "auto", "Vulkan" to "vulkan", "OpenGL" to "opengl"), backend) { backend = it })
-        settingsPanel.addView(settingGap())
-        settingsPanel.addView(settingTitle("目标帧率", "120 FPS 仅在屏幕与系统允许时启用"))
-        settingsPanel.addView(segmented(listOf("30" to "30", "45" to "45", "60" to "60", "90" to "90", "120" to "120"), targetFps) { targetFps = it })
-        settingsPanel.addView(settingGap())
-        settingsPanel.addView(settingTitle("画面质量", "性能档会降低动态背景和粒子数量"))
-        settingsPanel.addView(segmented(listOf("性能" to "performance", "均衡" to "balanced", "高清" to "high"), quality) { quality = it })
-        settingsPanel.addView(settingGap())
-        settingsPanel.addView(settingTitle("技能特效", "精简 / 标准 / 华丽"))
-        settingsPanel.addView(segmented(listOf("精简" to "compact", "标准" to "standard", "华丽" to "luxury"), effects) { effects = it })
-        settingsPanel.addView(settingGap())
-        settingsPanel.addView(settingTitle("摇杆方式", "浮动摇杆会在首次按下位置出现"))
-        settingsPanel.addView(segmented(listOf("固定" to "fixed", "浮动" to "floating"), joystick) { joystick = it })
-        settingsPanel.addView(settingGap())
-        settingsPanel.addView(toggleRow("左手布局", "摇杆与技能区左右互换", leftHanded) { leftHanded = it })
-        settingsPanel.addView(toggleRow("触感反馈", "冲刺、技能命中与升级反馈", haptics) { haptics = it })
-        settingsPanel.addView(toggleRow("模式音乐", "每种模式使用独立动态音轨", music) { music = it })
-        content.addView(settingsPanel)
-
         content.addView(space(20))
         content.addView(buildLaunchButton(), LinearLayout.LayoutParams(-1, dp(76)))
-        content.addView(label("C++ 60Hz 固定逻辑 · ARM64 原生构建 · 设置可随时调整", 11f, mutedText).apply {
+        content.addView(label("C++ 60Hz 固定逻辑 · ARM64 原生构建 · 画面与操作请点右上角设置", 11f, mutedText).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(10), 0, 0)
         })
@@ -249,12 +237,160 @@ class MainActivity : Activity() {
                 addView(label("EVOLUTION ARENA", 9f, cyan, Typeface.BOLD).apply { letterSpacing = 0.22f })
             }, LinearLayout.LayoutParams(0, -2, 1f))
 
-            addView(label("AI 战场\n已就绪", 11f, primaryText, Typeface.BOLD).apply {
+            addView(label("AI 战场\n已就绪", 10f, primaryText, Typeface.BOLD).apply {
                 gravity = Gravity.CENTER
-                setPadding(dp(12), dp(8), dp(12), dp(8))
+                setPadding(dp(9), dp(8), dp(9), dp(8))
                 background = rounded(Color.argb(115, 16, 39, 56), dp(18).toFloat(), Color.argb(120, 82, 246, 255))
             })
+            addView(label("⚙", 25f, cyan, Typeface.BOLD).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "画面与操作设置"
+                isClickable = true
+                isFocusable = true
+                background = RippleDrawable(
+                    ColorStateList.valueOf(Color.argb(80, 82, 246, 255)),
+                    rounded(Color.argb(150, 12, 21, 41), dp(15).toFloat(), borderColor),
+                    null,
+                )
+                setOnClickListener { showSettingsDialog() }
+            }, LinearLayout.LayoutParams(dp(50), dp(50)).apply { leftMargin = dp(8) })
         }
+    }
+
+    private fun showSettingsDialog() {
+        var draftBackend = backend
+        var draftFps = targetFps
+        var draftQuality = quality
+        var draftEffects = effects
+        var draftJoystick = joystick
+        var draftLeftHanded = leftHanded
+        var draftHaptics = haptics
+        var draftMusic = music
+
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val root = FrameLayout(this).apply { setBackgroundColor(backgroundColor) }
+        root.addView(ArenaBackdropView(this), matchParent())
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(20), dp(18), dp(32))
+        }
+        scroll.addView(content, matchWrap())
+        root.addView(scroll, matchParent())
+
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(label("设置", 28f, primaryText, Typeface.BOLD))
+                addView(label("画面 · 性能 · 操作 · 声音", 11f, cyan, Typeface.BOLD).apply { letterSpacing = .09f })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(label("×", 30f, primaryText, Typeface.NORMAL).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "关闭设置"
+                isClickable = true
+                isFocusable = true
+                background = RippleDrawable(
+                    ColorStateList.valueOf(Color.argb(80, 255, 255, 255)),
+                    rounded(Color.argb(180, 12, 21, 41), dp(15).toFloat(), borderColor),
+                    null,
+                )
+                setOnClickListener { dialog.dismiss() }
+            }, LinearLayout.LayoutParams(dp(50), dp(50)))
+        })
+        content.addView(space(22))
+        content.addView(section("01", "画面与性能", "独立设置菜单"))
+        val graphicsPanel = settingsPanel()
+        graphicsPanel.addView(settingTitle("图形接口", "自动模式走稳定 OpenGL；Vulkan 可手动启用，不兼容会回退"))
+        graphicsPanel.addView(segmented(
+            listOf("自动" to "auto", "Vulkan" to "vulkan", "OpenGL" to "opengl"),
+            draftBackend,
+        ) { draftBackend = it })
+        graphicsPanel.addView(settingGap())
+        graphicsPanel.addView(settingTitle("目标帧率", "系统温控、省电策略或屏幕能力可能限制实际帧率"))
+        graphicsPanel.addView(segmented(
+            listOf("30" to "30", "45" to "45", "60" to "60", "90" to "90", "120" to "120"),
+            draftFps,
+        ) { draftFps = it })
+        graphicsPanel.addView(settingGap())
+        graphicsPanel.addView(settingTitle("画面质量", "性能档会减少背景层级，高清档保留更多细节"))
+        graphicsPanel.addView(segmented(
+            listOf("性能" to "performance", "均衡" to "balanced", "高清" to "high"),
+            draftQuality,
+        ) { draftQuality = it })
+        graphicsPanel.addView(settingGap())
+        graphicsPanel.addView(settingTitle("技能特效", "控制粒子、光晕与技能环的密度"))
+        graphicsPanel.addView(segmented(
+            listOf("精简" to "compact", "标准" to "standard", "华丽" to "luxury"),
+            draftEffects,
+        ) { draftEffects = it })
+        content.addView(graphicsPanel)
+
+        content.addView(space(22))
+        content.addView(section("02", "操作与声音", "个性化控制"))
+        val controlsPanel = settingsPanel()
+        controlsPanel.addView(settingTitle("摇杆方式", "浮动摇杆会在手指首次按下的位置出现"))
+        controlsPanel.addView(segmented(
+            listOf("固定" to "fixed", "跟随手指" to "floating"),
+            draftJoystick,
+        ) { draftJoystick = it })
+        controlsPanel.addView(settingGap())
+        controlsPanel.addView(toggleRow("左手布局", "摇杆与技能区左右互换", draftLeftHanded) { draftLeftHanded = it })
+        controlsPanel.addView(toggleRow("触感反馈", "冲刺、技能命中与升级时震动", draftHaptics) { draftHaptics = it })
+        controlsPanel.addView(toggleRow("模式音乐", "每种模式使用独立动态音轨", draftMusic) { draftMusic = it })
+        content.addView(controlsPanel)
+
+        content.addView(space(22))
+        content.addView(label("保存设置", 18f, backgroundColor, Typeface.BOLD).apply {
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            background = RippleDrawable(
+                ColorStateList.valueOf(Color.argb(70, 255, 255, 255)),
+                GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(cyan, Color.rgb(171, 117, 255))).apply {
+                    cornerRadius = dp(18).toFloat()
+                },
+                null,
+            )
+            setOnClickListener {
+                backend = draftBackend
+                targetFps = draftFps
+                quality = draftQuality
+                effects = draftEffects
+                joystick = draftJoystick
+                leftHanded = draftLeftHanded
+                haptics = draftHaptics
+                music = draftMusic
+                savePreferences()
+                dialog.dismiss()
+            }
+        }, LinearLayout.LayoutParams(-1, dp(60)))
+        content.addView(label("新设置会在下一局战斗生效", 11f, mutedText).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(9), 0, 0)
+        })
+
+        dialog.setContentView(root)
+        dialog.setOnShowListener {
+            dialog.window?.apply {
+                setBackgroundDrawable(ColorDrawable(backgroundColor))
+                setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+                statusBarColor = backgroundColor
+                navigationBarColor = backgroundColor
+            }
+        }
+        dialog.show()
+    }
+
+    private fun settingsPanel(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(16), dp(14), dp(16))
+        background = rounded(surfaceColor, dp(18).toFloat(), borderColor)
     }
 
     private fun buildMapCard(map: ArenaMap): View {
@@ -437,20 +573,9 @@ class MainActivity : Activity() {
     }
 
     private fun launchBattle() {
+        savePreferences()
         getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
-            .putString("map", selectedMap.id)
-            .putString("mode", selectedMode.id)
-            .putString("archetype", selectedArchetype.id)
-            .putString("skin", selectedSkin.id)
-            .putString("ai", aiStrength)
-            .putString("backend", backend)
-            .putString("fps", targetFps)
-            .putString("quality", quality)
-            .putString("effects", effects)
-            .putString("joystick", joystick)
-            .putBoolean("left_handed", leftHanded)
-            .putBoolean("haptics", haptics)
-            .putBoolean("music", music)
+            .putBoolean("battle_boot_pending", true)
             .apply()
 
         startActivity(Intent(this, BattleActivity::class.java).apply {
@@ -471,6 +596,25 @@ class MainActivity : Activity() {
             putExtra(BattleActivity.EXTRA_MUSIC, music)
         })
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+    }
+
+    private fun savePreferences() {
+        getSharedPreferences("arena_settings", MODE_PRIVATE).edit()
+            .putString("map", selectedMap.id)
+            .putString("mode", selectedMode.id)
+            .putString("archetype", selectedArchetype.id)
+            .putString("skin", selectedSkin.id)
+            .putString("ai", aiStrength)
+            .putString("backend", backend)
+            .putString("fps", targetFps)
+            .putString("quality", quality)
+            .putString("effects", effects)
+            .putString("joystick", joystick)
+            .putBoolean("left_handed", leftHanded)
+            .putBoolean("haptics", haptics)
+            .putBoolean("music", music)
+            .putInt("settings_revision", SETTINGS_REVISION)
+            .apply()
     }
 
     private fun updateMissionSummary() {
@@ -598,6 +742,10 @@ class MainActivity : Activity() {
     private fun matchWrap() = ViewGroup.LayoutParams(-1, -2)
 
     private data class SelectableCard(val root: View, val border: View, val badge: View)
+
+    private companion object {
+        const val SETTINGS_REVISION = 2
+    }
 }
 
 private class ArenaBackdropView(context: android.content.Context) : View(context) {

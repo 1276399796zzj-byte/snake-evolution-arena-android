@@ -43,7 +43,7 @@ class BattleView(
         Color.rgb(255, 145, 72),
     )
 
-    private var worldHandle = 0L
+    private var worldRuntime: GameWorldRuntime? = null
     private var sceneRenderer: ArenaSceneRenderer? = null
     private var actualBackendLabel = "CANVAS · 兼容模式"
     private var backendSummary = ""
@@ -140,8 +140,8 @@ class BattleView(
         )
         resetControlPositions()
 
-        if (worldHandle != 0L) NativeBridge.destroyWorld(worldHandle)
-        worldHandle = NativeBridge.createWorld(
+        worldRuntime?.release()
+        worldRuntime = GameWorldRuntime.create(
             width.toFloat(),
             height.toFloat(),
             SystemClock.elapsedRealtimeNanos(),
@@ -181,18 +181,14 @@ class BattleView(
         if (released) return
         pauseGame()
         released = true
-        if (worldHandle != 0L) {
-            NativeBridge.destroyWorld(worldHandle)
-            worldHandle = 0L
-        }
+        worldRuntime?.release()
+        worldRuntime = null
     }
 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running || released) return
-        if (worldHandle != 0L) {
-            val boosting = boostPressed || SystemClock.elapsedRealtime() < dashUntilMs
-            NativeBridge.advanceWorld(worldHandle, frameTimeNanos, directionX, directionY, boosting)
-        }
+        val boosting = boostPressed || SystemClock.elapsedRealtime() < dashUntilMs
+        worldRuntime?.advance(frameTimeNanos, directionX, directionY, boosting)
         val shouldRender = if (lastChoreographerFrameNanos == 0L) {
             true
         } else {
@@ -207,7 +203,7 @@ class BattleView(
         }
         lastChoreographerFrameNanos = frameTimeNanos
         if (shouldRender) {
-            if (worldHandle != 0L) snapshotSize = NativeBridge.writeWorldSnapshot(worldHandle, snapshot)
+            snapshotSize = worldRuntime?.writeSnapshot(snapshot) ?: 0
             sceneRenderer?.submitFrame(
                 snapshot,
                 snapshotSize,
@@ -680,8 +676,8 @@ class BattleView(
         if (isUpgradePending()) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 val choice = upgradeChoiceAt(event.getX(event.actionIndex), event.getY(event.actionIndex))
-                if (choice >= 0 && worldHandle != 0L) {
-                    NativeBridge.chooseUpgrade(worldHandle, choice)
+                if (choice >= 0) {
+                    worldRuntime?.chooseUpgrade(choice)
                     haptic(HapticFeedbackConstants.CONFIRM)
                     invalidate()
                 }
@@ -801,7 +797,7 @@ class BattleView(
                 activated = true
             }
         }
-        if (activated && worldHandle != 0L) NativeBridge.activateAbility(worldHandle, index)
+        if (activated) worldRuntime?.activateAbility(index)
         invalidate()
     }
 
