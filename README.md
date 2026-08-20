@@ -2,7 +2,7 @@
 
 这是与现有网页版本并行开发的 Android 原生工程。它不是 WebView 套壳：大厅与触控 HUD 使用 Kotlin 原生 View，确定性战斗核心使用 C++17，场景层提供真实 Vulkan 与 OpenGL ES 3 双后端。
 
-`0.1.2` 增加 Android 16 专用兼容路径：默认战斗完全使用 Kotlin 模拟与 Canvas，不加载 C++、Vulkan 或 OpenGL 驱动；进阶接口仍可在设置中手动启用。应用同时记录战场启动阶段，异常时保留可复制的设备诊断信息。
+`0.1.3` 增加 Android 16 专用兼容路径：默认战斗完全使用 Kotlin 模拟与 Canvas，不加载 C++、Vulkan 或 OpenGL 驱动；进阶接口仍可在设置中手动启用。沉浸式横屏只会在 `DecorView` 挂载后启用，兼容对窗口初始化时序更严格的 ColorOS；应用同时记录战场启动阶段，异常时保留可复制的设备诊断信息。
 
 ## 已锁定目标
 

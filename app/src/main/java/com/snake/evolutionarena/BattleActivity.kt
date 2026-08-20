@@ -40,7 +40,6 @@ class BattleActivity : Activity() {
         CrashDiagnostics.markStage(this, "battle_window")
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
-        keepImmersive()
 
         val targetFps = intent.getIntExtra(EXTRA_TARGET_FPS, 60).coerceIn(30, 120)
 
@@ -78,6 +77,7 @@ class BattleActivity : Activity() {
         )
         setContentView(root)
         CrashDiagnostics.markStage(this, "battle_content_ready")
+        scheduleImmersiveMode()
         runCatching { registerPerformanceSignals() }
         if (battleConfig.music) soundtrack = runCatching {
             ProceduralSoundtrack(battleConfig.modeId)
@@ -90,13 +90,13 @@ class BattleActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) keepImmersive()
+        if (hasFocus) scheduleImmersiveMode()
     }
 
     override fun onResume() {
         super.onResume()
         hostResumed = true
-        keepImmersive()
+        scheduleImmersiveMode()
         updateSystemPerformanceTier(powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE)
         sceneRenderer?.onHostResume()
         if (::battleView.isInitialized) battleView.resumeGame()
@@ -126,15 +126,27 @@ class BattleActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun keepImmersive() {
+    private fun scheduleImmersiveMode() {
+        val decorView = runCatching { window.decorView }.getOrNull() ?: return
+        decorView.post {
+            if (!isFinishing && !isDestroyed && decorView.isAttachedToWindow) {
+                runCatching { applyImmersiveMode(decorView) }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyImmersiveMode(decorView: View) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
-            window.insetsController?.apply {
-                hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            runCatching { decorView.windowInsetsController }.getOrNull()?.apply {
+                runCatching {
+                    hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
             }
         } else {
-            window.decorView.systemUiVisibility = (
+            decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
                     View.SYSTEM_UI_FLAG_FULLSCREEN or
                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -316,6 +328,7 @@ class BattleActivity : Activity() {
             }, LinearLayout.LayoutParams(dp(260), dp(54)))
         }
         setContentView(panel)
+        scheduleImmersiveMode()
     }
 
     companion object {
