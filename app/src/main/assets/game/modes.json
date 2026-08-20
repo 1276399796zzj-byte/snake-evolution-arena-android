@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "modes": [
+    {
+      "id": "blitz",
+      "name": "3分钟闪击",
+      "shortName": "闪击",
+      "description": "无限复活，抢分、截杀、冲击榜首。",
+      "objective": "倒计时结束前登顶积分榜",
+      "durationSeconds": 180,
+      "soundtrack": "电弧疾驰",
+      "bpm": 142,
+      "rules": ["无限重构", "阵亡扣分", "榜首结算"]
+    },
+    {
+      "id": "expedition",
+      "name": "异域远征",
+      "shortName": "远征",
+      "description": "十分钟构筑流派，最终挑战地图首领。",
+      "objective": "完成构筑并击破终局首领",
+      "durationSeconds": 600,
+      "soundtrack": "深域回响",
+      "bpm": 92,
+      "rules": ["单次生命", "阶段升压", "8分钟首领"]
+    },
+    {
+      "id": "endless",
+      "name": "无尽猎场",
+      "shortName": "无尽",
+      "description": "强度持续攀升，只为刷新生存纪录。",
+      "objective": "在持续升压的猎场刷新纪录",
+      "durationSeconds": null,
+      "soundtrack": "无界漂流",
+      "bpm": 112,
+      "rules": ["没有时限", "威胁递增", "纪录挑战"]
+    }
+  ]
+}

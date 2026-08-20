@@ -5,12 +5,26 @@
         android:name="android.hardware.vulkan.level"
         android:required="false"
         android:version="1" />
+    <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="false" />
 
     <application
+        android:name=".ArenaApplication"
         android:allowBackup="true"
+        android:appCategory="game"
+        android:enableOnBackInvokedCallback="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="蛇域进化"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.SnakeEvolutionArena">
+        <activity
+            android:name=".BattleActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false"
+            android:resizeableActivity="false"
+            android:screenOrientation="sensorLandscape" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
