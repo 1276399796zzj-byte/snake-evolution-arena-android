@@ -53,6 +53,20 @@ Java_com_snake_evolutionarena_VulkanBridge_nativeResizeRenderer(
     }
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_snake_evolutionarena_VulkanBridge_nativeDrawableWidth(
+    JNIEnv*, jobject, const jlong handle) {
+    const auto* renderer = from_handle(handle);
+    return renderer == nullptr ? 0 : static_cast<jint>(renderer->drawable_width());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_snake_evolutionarena_VulkanBridge_nativeDrawableHeight(
+    JNIEnv*, jobject, const jlong handle) {
+    const auto* renderer = from_handle(handle);
+    return renderer == nullptr ? 0 : static_cast<jint>(renderer->drawable_height());
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_snake_evolutionarena_VulkanBridge_nativeRender(
     JNIEnv* env,

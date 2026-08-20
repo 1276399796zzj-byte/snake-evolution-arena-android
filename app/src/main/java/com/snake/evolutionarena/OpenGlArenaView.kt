@@ -40,6 +40,8 @@ class OpenGlArenaView(
         pulseStartedMs: Long,
         shieldStartedMs: Long,
         performanceTier: Int,
+        cameraX: Float,
+        cameraY: Float,
     ) {
         arenaRenderer.submitFrame(
             snapshot,
@@ -49,6 +51,8 @@ class OpenGlArenaView(
             pulseStartedMs,
             shieldStartedMs,
             performanceTier,
+            cameraX,
+            cameraY,
         )
         requestRender()
     }
@@ -88,6 +92,10 @@ class OpenGlArenaView(
         private var renderShieldStartedMs = -10_000L
         private var pendingPerformanceTier = 0
         private var renderPerformanceTier = 0
+        private var pendingCameraX = 0f
+        private var pendingCameraY = 0f
+        private var renderCameraX = 0f
+        private var renderCameraY = 0f
         private var viewportWidth = 1
         private var viewportHeight = 1
         private var program = 0
@@ -102,6 +110,8 @@ class OpenGlArenaView(
             pulseStartedMs: Long,
             shieldStartedMs: Long,
             performanceTier: Int,
+            cameraX: Float,
+            cameraY: Float,
         ) {
             val size = snapshotSize.coerceIn(0, minOf(snapshot.size, pendingSnapshot.size))
             synchronized(lock) {
@@ -112,6 +122,8 @@ class OpenGlArenaView(
                 pendingPulseStartedMs = pulseStartedMs
                 pendingShieldStartedMs = shieldStartedMs
                 pendingPerformanceTier = performanceTier
+                pendingCameraX = cameraX
+                pendingCameraY = cameraY
             }
         }
 
@@ -149,6 +161,8 @@ class OpenGlArenaView(
                     renderPulseStartedMs = pendingPulseStartedMs
                     renderShieldStartedMs = pendingShieldStartedMs
                     renderPerformanceTier = pendingPerformanceTier
+                    renderCameraX = pendingCameraX
+                    renderCameraY = pendingCameraY
                 }
 
                 val vertexCount = geometry.build(
@@ -162,6 +176,8 @@ class OpenGlArenaView(
                     renderShieldStartedMs,
                     SystemClock.elapsedRealtime(),
                     renderPerformanceTier,
+                    renderCameraX,
+                    renderCameraY,
                 )
                 GLES30.glClearColor(geometry.clearRed(), geometry.clearGreen(), geometry.clearBlue(), 1f)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)

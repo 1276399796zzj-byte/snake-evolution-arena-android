@@ -36,6 +36,18 @@ object VulkanBridge {
         if (libraryLoaded && handle != 0L) runCatching { nativeResizeRenderer(handle, width, height) }
     }
 
+    fun drawableWidth(handle: Long): Int = if (!libraryLoaded || handle == 0L) {
+        0
+    } else {
+        runCatching { nativeDrawableWidth(handle) }.getOrDefault(0)
+    }
+
+    fun drawableHeight(handle: Long): Int = if (!libraryLoaded || handle == 0L) {
+        0
+    } else {
+        runCatching { nativeDrawableHeight(handle) }.getOrDefault(0)
+    }
+
     fun render(
         handle: Long,
         vertices: FloatBuffer,
@@ -55,6 +67,8 @@ object VulkanBridge {
     private external fun nativeDeviceName(): String
     private external fun nativeCreateRenderer(surface: Surface, width: Int, height: Int): Long
     private external fun nativeResizeRenderer(handle: Long, width: Int, height: Int)
+    private external fun nativeDrawableWidth(handle: Long): Int
+    private external fun nativeDrawableHeight(handle: Long): Int
     private external fun nativeRender(
         handle: Long,
         vertices: FloatBuffer,

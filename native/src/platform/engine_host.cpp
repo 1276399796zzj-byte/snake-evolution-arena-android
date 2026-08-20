@@ -12,6 +12,9 @@ constexpr std::size_t snapshot_header_size = 14U;
 game::WorldConfig make_config(
     const float width,
     const float height,
+    const float base_speed,
+    const float pickup_radius,
+    const float segment_spacing,
     const std::uint64_t seed,
     const std::uint32_t map_index,
     const std::uint32_t mode_index,
@@ -20,6 +23,11 @@ game::WorldConfig make_config(
     game::WorldConfig config{};
     config.width = std::max(320.0F, width);
     config.height = std::max(180.0F, height);
+    config.base_speed = std::clamp(base_speed, 220.0F, 620.0F);
+    config.pickup_radius = std::clamp(pickup_radius, 32.0F, 96.0F);
+    config.food_radius = std::clamp(config.pickup_radius * 0.28F, 10.0F, 24.0F);
+    config.segment_spacing = std::clamp(segment_spacing, 18.0F, 42.0F);
+    config.boundary_margin = std::max(config.pickup_radius, config.segment_spacing * 2.0F);
     config.seed = seed;
     config.mode_index = std::min(2U, mode_index);
     config.ai_level = std::min(2U, ai_level);
@@ -27,15 +35,15 @@ game::WorldConfig make_config(
     config.bot_count = config.mode_index == 1U ? 4U : (config.ai_level == 2U ? 6U : 5U);
     switch (std::min(2U, map_index)) {
         case 1U:
-            config.initial_food_count = 88U;
+            config.initial_food_count = 176U;
             config.base_speed *= 0.96F;
             break;
         case 2U:
-            config.initial_food_count = 68U;
+            config.initial_food_count = 136U;
             config.base_speed *= 1.04F;
             break;
         default:
-            config.initial_food_count = 78U;
+            config.initial_food_count = 156U;
             break;
     }
     return config;
@@ -43,15 +51,31 @@ game::WorldConfig make_config(
 
 }  // namespace
 
+EngineHost::EngineHost(const float width, const float height, const std::uint64_t seed)
+    : EngineHost(width, height, 320.0F, 54.0F, 28.0F, seed) {}
+
 EngineHost::EngineHost(
     const float width,
     const float height,
+    const float base_speed,
+    const float pickup_radius,
+    const float segment_spacing,
     const std::uint64_t seed,
     const std::uint32_t map_index,
     const std::uint32_t mode_index,
     const std::uint32_t ai_level,
     const std::uint32_t archetype_index)
-    : world_(make_config(width, height, seed, map_index, mode_index, ai_level, archetype_index)) {}
+    : world_(make_config(
+          width,
+          height,
+          base_speed,
+          pickup_radius,
+          segment_spacing,
+          seed,
+          map_index,
+          mode_index,
+          ai_level,
+          archetype_index)) {}
 
 void EngineHost::advance(const std::int64_t frame_time_nanoseconds, const game::InputState& input) {
     if (last_frame_time_nanoseconds_ == 0 || frame_time_nanoseconds <= last_frame_time_nanoseconds_) {

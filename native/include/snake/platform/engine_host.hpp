@@ -10,9 +10,14 @@ namespace snake::platform {
 
 class EngineHost {
   public:
+    EngineHost(float width, float height, std::uint64_t seed);
+
     EngineHost(
         float width,
         float height,
+        float base_speed,
+        float pickup_radius,
+        float segment_spacing,
         std::uint64_t seed,
         std::uint32_t map_index = 0U,
         std::uint32_t mode_index = 0U,

@@ -23,6 +23,8 @@ public:
     VulkanRenderer& operator=(const VulkanRenderer&) = delete;
 
     void resize(int width, int height);
+    [[nodiscard]] int drawable_width() const noexcept;
+    [[nodiscard]] int drawable_height() const noexcept;
     bool render(
         const float* vertices,
         std::size_t vertex_count,
@@ -38,4 +40,3 @@ private:
 };
 
 }  // namespace snake::render
-

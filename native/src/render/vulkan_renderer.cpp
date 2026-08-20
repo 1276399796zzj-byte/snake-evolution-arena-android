@@ -151,6 +151,14 @@ public:
         resize_pending_ = true;
     }
 
+    [[nodiscard]] int drawable_width() const noexcept {
+        return static_cast<int>(extent_.width);
+    }
+
+    [[nodiscard]] int drawable_height() const noexcept {
+        return static_cast<int>(extent_.height);
+    }
+
     bool render(
         const float* vertices,
         const std::size_t vertex_count,
@@ -504,7 +512,10 @@ private:
         swapchain_info.imageArrayLayers = 1;
         swapchain_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         swapchain_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        swapchain_info.preTransform = capabilities.currentTransform;
+        swapchain_info.preTransform =
+            (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0
+            ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+            : capabilities.currentTransform;
         swapchain_info.compositeAlpha = choose_composite_alpha(capabilities);
         swapchain_info.presentMode = present_mode;
         swapchain_info.clipped = VK_TRUE;
@@ -866,6 +877,14 @@ VulkanRenderer::~VulkanRenderer() = default;
 
 void VulkanRenderer::resize(const int width, const int height) {
     implementation_->resize(width, height);
+}
+
+int VulkanRenderer::drawable_width() const noexcept {
+    return implementation_->drawable_width();
+}
+
+int VulkanRenderer::drawable_height() const noexcept {
+    return implementation_->drawable_height();
 }
 
 bool VulkanRenderer::render(

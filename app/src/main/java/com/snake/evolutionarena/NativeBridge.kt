@@ -11,6 +11,9 @@ object NativeBridge {
     external fun createWorld(
         width: Float,
         height: Float,
+        baseSpeed: Float,
+        pickupRadius: Float,
+        segmentSpacing: Float,
         seed: Long,
         mapIndex: Int,
         modeIndex: Int,

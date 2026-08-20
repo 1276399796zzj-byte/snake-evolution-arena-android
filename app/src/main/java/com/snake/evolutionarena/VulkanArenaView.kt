@@ -37,6 +37,10 @@ class VulkanArenaView(
     private var renderShieldStartedMs = -10_000L
     private var pendingPerformanceTier = 0
     private var renderPerformanceTier = 0
+    private var pendingCameraX = 0f
+    private var pendingCameraY = 0f
+    private var renderCameraX = 0f
+    private var renderCameraY = 0f
     private var generation = 0L
     private var renderQueued = false
     private var active = false
@@ -73,6 +77,9 @@ class VulkanArenaView(
             nativeHandle = VulkanBridge.createRenderer(surface, width, height)
             if (nativeHandle == 0L) {
                 fail("Vulkan Surface/Swapchain 初始化失败，已回退 OpenGL ES")
+            } else if (!drawableAspectMatches(width, height)) {
+                destroyNativeRenderer()
+                fail("Vulkan 交换链方向与横屏不一致，已自动回退 OpenGL ES")
             } else {
                 synchronized(lock) { scheduleRenderLocked() }
             }
@@ -102,6 +109,8 @@ class VulkanArenaView(
         pulseStartedMs: Long,
         shieldStartedMs: Long,
         performanceTier: Int,
+        cameraX: Float,
+        cameraY: Float,
     ) {
         val size = snapshotSize.coerceIn(0, minOf(snapshot.size, pendingSnapshot.size))
         synchronized(lock) {
@@ -113,6 +122,8 @@ class VulkanArenaView(
             pendingPulseStartedMs = pulseStartedMs
             pendingShieldStartedMs = shieldStartedMs
             pendingPerformanceTier = performanceTier
+            pendingCameraX = cameraX
+            pendingCameraY = cameraY
             generation += 1L
             scheduleRenderLocked()
         }
@@ -161,6 +172,8 @@ class VulkanArenaView(
             renderPulseStartedMs = pendingPulseStartedMs
             renderShieldStartedMs = pendingShieldStartedMs
             renderPerformanceTier = pendingPerformanceTier
+            renderCameraX = pendingCameraX
+            renderCameraY = pendingCameraY
             frameGeneration = generation
         }
 
@@ -176,6 +189,8 @@ class VulkanArenaView(
                 renderShieldStartedMs,
                 SystemClock.elapsedRealtime(),
                 renderPerformanceTier,
+                renderCameraX,
+                renderCameraY,
             )
             val succeeded = VulkanBridge.render(
                 nativeHandle,
@@ -186,6 +201,10 @@ class VulkanArenaView(
                 geometry.clearBlue(),
             )
             if (!succeeded) fail("Vulkan 帧提交失败，已回退 OpenGL ES")
+            if (succeeded && !drawableAspectMatches(surfaceWidth, surfaceHeight)) {
+                destroyNativeRenderer()
+                fail("Vulkan 画面比例发生变化，已自动回退 OpenGL ES")
+            }
         }
 
         synchronized(lock) {
@@ -207,8 +226,23 @@ class VulkanArenaView(
         if (failureReported.compareAndSet(false, true)) post { onFailure(reason) }
     }
 
+    private fun drawableAspectMatches(logicalWidth: Int, logicalHeight: Int): Boolean {
+        if (nativeHandle == 0L || logicalWidth <= 0 || logicalHeight <= 0) return false
+        val drawableWidth = VulkanBridge.drawableWidth(nativeHandle)
+        val drawableHeight = VulkanBridge.drawableHeight(nativeHandle)
+        if (drawableWidth <= 0 || drawableHeight <= 0) return false
+        return SurfaceAspectPolicy.matches(
+            logicalWidth,
+            logicalHeight,
+            drawableWidth,
+            drawableHeight,
+            MAX_ASPECT_ERROR,
+        )
+    }
+
     companion object {
         private const val MAX_SNAPSHOT_FLOATS = 8192
-        private const val SNAPSHOT_HEADER_SIZE = 14
+        private const val SNAPSHOT_HEADER_SIZE = BattleSnapshot.HEADER_SIZE
+        private const val MAX_ASPECT_ERROR = .04f
     }
 }

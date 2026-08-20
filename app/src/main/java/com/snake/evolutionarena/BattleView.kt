@@ -28,6 +28,7 @@ class BattleView(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
+    private val foodHsv = floatArrayOf(0f, .78f, 1f)
     private val boldTypeface = Typeface.create("sans", Typeface.BOLD)
     private val normalTypeface = Typeface.create("sans", Typeface.NORMAL)
     private val hudTitle = "${config.mapName}  ·  ${config.modeName}"
@@ -44,6 +45,9 @@ class BattleView(
     )
 
     private var worldRuntime: GameWorldRuntime? = null
+    private val worldCamera = WorldCamera()
+    private var worldWidth = 1f
+    private var worldHeight = 1f
     private var sceneRenderer: ArenaSceneRenderer? = null
     private var actualBackendLabel = "CANVAS · 兼容模式"
     private var backendSummary = ""
@@ -139,11 +143,17 @@ class BattleView(
             Shader.TileMode.CLAMP,
         )
         resetControlPositions()
+        worldCamera.reset()
+        worldWidth = dp(WEB_WORLD_WIDTH_DP)
+        worldHeight = dp(WEB_WORLD_HEIGHT_DP)
 
         worldRuntime?.release()
         worldRuntime = GameWorldRuntime.create(
-            width.toFloat(),
-            height.toFloat(),
+            worldWidth,
+            worldHeight,
+            dp(WEB_BASE_SPEED_DP),
+            dp(PICKUP_RADIUS_DP),
+            dp(SEGMENT_SPACING_DP),
             SystemClock.elapsedRealtimeNanos(),
             when (config.mapId) { "wilds" -> 1; "lab" -> 2; else -> 0 },
             when (config.modeId) { "expedition" -> 1; "endless" -> 2; else -> 0 },
@@ -205,6 +215,16 @@ class BattleView(
         lastChoreographerFrameNanos = frameTimeNanos
         if (shouldRender) {
             snapshotSize = worldRuntime?.writeSnapshot(snapshot) ?: 0
+            if (snapshotSize >= SNAPSHOT_HEADER_SIZE) {
+                worldCamera.update(
+                    snapshot[0],
+                    snapshot[1],
+                    width.toFloat(),
+                    height.toFloat(),
+                    worldWidth,
+                    worldHeight,
+                )
+            }
             sceneRenderer?.submitFrame(
                 snapshot,
                 snapshotSize,
@@ -213,6 +233,8 @@ class BattleView(
                 pulseStartedMs,
                 shieldStartedMs,
                 effectivePerformanceTier(),
+                worldCamera.x,
+                worldCamera.y,
             )
             postInvalidateOnAnimation()
         }
@@ -223,9 +245,13 @@ class BattleView(
         super.onDraw(canvas)
         if (sceneRenderer == null) {
             drawArena(canvas)
+            canvas.save()
+            canvas.translate(-worldCamera.x, -worldCamera.y)
             if (snapshotSize >= SNAPSHOT_HEADER_SIZE) drawWorld(canvas)
             drawSkillEffects(canvas)
+            canvas.restore()
         }
+        if (snapshotSize >= SNAPSHOT_HEADER_SIZE) drawMinimap(canvas)
         drawHud(canvas)
         drawControls(canvas)
         if (isUpgradePending()) drawUpgradeOverlay(canvas)
@@ -251,15 +277,16 @@ class BattleView(
 
     private fun drawNeon(canvas: Canvas, time: Float) {
         val gap = dp(if (config.quality == "performance") 86 else 58).toFloat()
-        val offset = (time * dp(7)) % gap
+        val offsetX = positiveModulo(time * dp(7) - worldCamera.x * .12f, gap)
+        val offsetY = positiveModulo(time * dp(7) - worldCamera.y * .12f, gap)
         strokePaint.strokeWidth = dp(1).toFloat()
         strokePaint.color = Color.argb(28, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
-        var x = -gap + offset
+        var x = -gap + offsetX
         while (x < width + gap) {
             canvas.drawLine(x, 0f, x + height * .28f, height.toFloat(), strokePaint)
             x += gap
         }
-        var y = offset
+        var y = offsetY
         while (y < height) {
             canvas.drawLine(0f, y, width.toFloat(), y, strokePaint)
             y += gap
@@ -274,8 +301,8 @@ class BattleView(
         strokePaint.style = Paint.Style.STROKE
         strokePaint.strokeWidth = dp(2).toFloat()
         for (index in 0 until if (config.quality == "performance") 5 else 9) {
-            val x = particleX[index] * width
-            val y = particleY[index + 8] * height
+            val x = positiveModulo(particleX[index] * width - worldCamera.x * .045f, width.toFloat())
+            val y = positiveModulo(particleY[index + 8] * height - worldCamera.y * .045f, height.toFloat())
             val radius = dp(24 + (index % 4) * 13).toFloat() + sin(time * .6f + index) * dp(5)
             strokePaint.color = Color.argb(30 + index * 2, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
             canvas.drawCircle(x, y, radius, strokePaint)
@@ -285,7 +312,7 @@ class BattleView(
 
     private fun drawLab(canvas: Canvas, time: Float) {
         val stripe = dp(70).toFloat()
-        val offset = (time * dp(10)) % stripe
+        val offset = positiveModulo(time * dp(10) - (worldCamera.x + worldCamera.y) * .055f, stripe)
         strokePaint.strokeWidth = dp(12).toFloat()
         strokePaint.color = Color.argb(24, Color.red(mapSecondary), Color.green(mapSecondary), Color.blue(mapSecondary))
         var x = -height.toFloat() + offset
@@ -320,83 +347,339 @@ class BattleView(
         val botCount = snapshot[6].toInt().coerceAtLeast(0)
         val foodOffset = SNAPSHOT_HEADER_SIZE + segmentCount * 2
 
+        drawWorldDecor(canvas)
+
         for (index in 0 until foodCount) {
-            val cursor = foodOffset + index * 3
-            if (cursor + 2 >= snapshotSize) break
+            val cursor = foodOffset + index * BattleSnapshot.FOOD_STRIDE
+            if (cursor + BattleSnapshot.FOOD_STRIDE - 1 >= snapshotSize) break
             val x = snapshot[cursor]
             val y = snapshot[cursor + 1]
-            val value = snapshot[cursor + 2].toInt().coerceIn(1, 3)
+            val value = snapshot[cursor + 2].toInt().coerceIn(1, 5)
+            val color = foodColor(snapshot[cursor + 3])
+            val pulse = snapshot[cursor + 4]
+            val special = snapshot[cursor + 5].toInt()
+            val radius = dp(3.5f + value * 1.15f) + sin(pulse) * dp(.55f)
             if (config.effects != "compact") {
-                paint.color = Color.argb(35, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
-                canvas.drawCircle(x, y, dp(9 + value * 2).toFloat(), paint)
+                paint.color = Color.argb(42, Color.red(color), Color.green(color), Color.blue(color))
+                canvas.drawCircle(x, y, radius * 2.35f, paint)
             }
-            paint.color = when (value) {
-                3 -> Color.rgb(255, 207, 74)
-                2 -> mapSecondary
-                else -> mapPrimary
+            paint.color = if (special == 0) color else Color.WHITE
+            canvas.drawCircle(x, y, if (special == 0) radius else dp(9f) + sin(pulse) * dp(1.8f), paint)
+            if (special != 0) {
+                strokePaint.shader = null
+                strokePaint.style = Paint.Style.STROKE
+                strokePaint.strokeWidth = dp(2f)
+                strokePaint.color = when (special) {
+                    1 -> Color.rgb(185, 255, 107)
+                    2 -> Color.rgb(255, 207, 74)
+                    else -> Color.rgb(82, 246, 255)
+                }
+                canvas.drawCircle(x, y, dp(15f) + sin(pulse) * dp(2f), strokePaint)
             }
-            canvas.drawCircle(x, y, dp(4 + value).toFloat(), paint)
         }
 
-        var botCursor = foodOffset + foodCount * 3
+        val botsOffset = foodOffset + foodCount * BattleSnapshot.FOOD_STRIDE
+        var contentCursor = botsOffset
+        repeat(botCount) {
+            if (contentCursor + BattleSnapshot.BOT_HEADER_SIZE - 1 >= snapshotSize) return@repeat
+            val count = snapshot[contentCursor + 3].toInt().coerceAtLeast(0)
+            contentCursor += BattleSnapshot.BOT_HEADER_SIZE + count * 2
+        }
+
+        val enemyCount = snapshot[BattleSnapshot.ENEMY_COUNT].toInt().coerceAtLeast(0)
+        drawEnemies(canvas, contentCursor, enemyCount)
+        contentCursor += enemyCount * BattleSnapshot.ENEMY_STRIDE
+        val projectileCount = snapshot[BattleSnapshot.PROJECTILE_COUNT].toInt().coerceAtLeast(0)
+        drawProjectiles(canvas, contentCursor, projectileCount)
+        contentCursor += projectileCount * BattleSnapshot.PROJECTILE_STRIDE
+        val particleOffset = contentCursor
+
+        var botCursor = botsOffset
         for (botIndex in 0 until botCount) {
             if (botCursor + 4 >= snapshotSize) break
             val botHeadX = snapshot[botCursor]
             val botHeadY = snapshot[botCursor + 1]
             val botSegments = snapshot[botCursor + 3].toInt().coerceAtLeast(0)
             val alive = snapshot[botCursor + 4] > .5f
-            botCursor += 5
+            botCursor += BattleSnapshot.BOT_HEADER_SIZE
             val color = botColors[botIndex % botColors.size]
             if (alive) {
-                for (segmentIndex in botSegments - 1 downTo 0) {
-                    val cursor = botCursor + segmentIndex * 2
-                    if (cursor + 1 >= snapshotSize) continue
-                    val progress = if (botSegments <= 1) 0f else segmentIndex.toFloat() / (botSegments - 1)
-                    paint.color = mix(color, mapSecondary, progress * .62f)
-                    canvas.drawCircle(
-                        snapshot[cursor],
-                        snapshot[cursor + 1],
-                        dp(9).toFloat() * (1f - progress * .28f),
-                        paint,
-                    )
-                }
-                paint.color = Color.WHITE
-                canvas.drawCircle(botHeadX, botHeadY, dp(9.5f), paint)
-                paint.color = color
-                canvas.drawCircle(botHeadX, botHeadY, dp(7.2f), paint)
+                drawSnakeBody(canvas, botCursor, botSegments, botHeadX, botHeadY, color, mapSecondary, false)
             }
             botCursor += botSegments * 2
         }
 
-        for (index in segmentCount - 1 downTo 0) {
-            val cursor = SNAPSHOT_HEADER_SIZE + index * 2
-            if (cursor + 1 >= snapshotSize) continue
-            val progress = if (segmentCount <= 1) 0f else index.toFloat() / (segmentCount - 1)
-            paint.color = mix(snakePrimary, snakeSecondary, progress)
-            val radius = dp(11).toFloat() * (1f - progress * .34f)
-            if (config.effects == "luxury") {
-                val glow = paint.color
-                paint.color = Color.argb(38, Color.red(glow), Color.green(glow), Color.blue(glow))
-                canvas.drawCircle(snapshot[cursor], snapshot[cursor + 1], radius * 1.75f, paint)
-                paint.color = glow
-            }
-            canvas.drawCircle(snapshot[cursor], snapshot[cursor + 1], radius, paint)
-        }
-
         val headX = snapshot[0]
         val headY = snapshot[1]
+        drawSnakeBody(canvas, SNAPSHOT_HEADER_SIZE, segmentCount, headX, headY, snakePrimary, snakeSecondary, true)
+        drawParticles(
+            canvas,
+            particleOffset,
+            snapshot[BattleSnapshot.PARTICLE_COUNT].toInt().coerceAtLeast(0),
+        )
+    }
+
+    private fun drawWorldDecor(canvas: Canvas) {
+        strokePaint.shader = null
+        strokePaint.style = Paint.Style.STROKE
+        strokePaint.strokeWidth = dp(3f)
+        strokePaint.color = Color.argb(92, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
+        canvas.drawRoundRect(
+            dp(18f),
+            dp(18f),
+            worldWidth - dp(18f),
+            worldHeight - dp(18f),
+            dp(32f),
+            dp(32f),
+            strokePaint,
+        )
+        when (config.mapId) {
+            "wilds" -> {
+                WILD_THORNS.forEachIndexed { areaIndex, area ->
+                    val x = dp(area[0])
+                    val y = dp(area[1])
+                    val radius = dp(area[2])
+                    paint.color = Color.argb(30, 185, 255, 107)
+                    canvas.drawCircle(x, y, radius, paint)
+                    strokePaint.strokeWidth = dp(2f)
+                    strokePaint.color = Color.argb(125, 185, 255, 107)
+                    canvas.drawCircle(x, y, radius, strokePaint)
+                    repeat(12) { index ->
+                        val thornAngle = index / 12f * 6.2831855f + areaIndex * .37f
+                        val inner = if (index % 2 == 0) radius * .64f else radius * .82f
+                        val outer = radius * (1.06f + index % 3 * .05f)
+                        canvas.drawLine(
+                            x + cos(thornAngle) * inner,
+                            y + sin(thornAngle) * inner,
+                            x + cos(thornAngle) * outer,
+                            y + sin(thornAngle) * outer,
+                            strokePaint,
+                        )
+                    }
+                }
+            }
+            "lab" -> {
+                LAB_POOLS.forEachIndexed { index, area ->
+                    val x = dp(area[0])
+                    val y = dp(area[1])
+                    val radius = dp(area[2])
+                    paint.color = Color.argb(28, 255, 90, 119)
+                    canvas.drawCircle(x, y, radius, paint)
+                    paint.color = Color.argb(34, 255, 207, 74)
+                    canvas.drawCircle(x, y, radius * .62f, paint)
+                    strokePaint.strokeWidth = dp(2f)
+                    strokePaint.color = Color.argb(125 + index * 12, 255, 207, 74)
+                    canvas.drawCircle(x, y, radius, strokePaint)
+                }
+            }
+            else -> {
+                val laneY = worldHeight * .5f
+                paint.color = Color.argb(20, Color.red(mapSecondary), Color.green(mapSecondary), Color.blue(mapSecondary))
+                canvas.drawRect(dp(40f), laneY - dp(76f), worldWidth - dp(40f), laneY + dp(76f), paint)
+                strokePaint.strokeWidth = dp(4f)
+                strokePaint.color = Color.argb(115, Color.red(mapSecondary), Color.green(mapSecondary), Color.blue(mapSecondary))
+                canvas.drawLine(dp(60f), laneY, worldWidth - dp(60f), laneY, strokePaint)
+                fun drawPortal(portalX: Float) {
+                    paint.color = Color.argb(26, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
+                    canvas.drawCircle(portalX, laneY, dp(72f), paint)
+                    paint.color = Color.argb(34, Color.red(mapSecondary), Color.green(mapSecondary), Color.blue(mapSecondary))
+                    canvas.drawCircle(portalX, laneY, dp(48f), paint)
+                    strokePaint.strokeWidth = dp(4f)
+                    strokePaint.color = Color.argb(220, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
+                    canvas.save()
+                    canvas.scale(.48f, 1f, portalX, laneY)
+                    canvas.drawCircle(portalX, laneY, dp(58f), strokePaint)
+                    canvas.restore()
+                }
+                drawPortal(dp(270f))
+                drawPortal(worldWidth - dp(270f))
+            }
+        }
+    }
+
+    private fun drawEnemies(canvas: Canvas, offset: Int, count: Int) {
+        for (index in 0 until count) {
+            val cursor = offset + index * BattleSnapshot.ENEMY_STRIDE
+            if (cursor + BattleSnapshot.ENEMY_STRIDE - 1 >= snapshotSize) break
+            val x = snapshot[cursor]
+            val y = snapshot[cursor + 1]
+            val kind = snapshot[cursor + 2].toInt().coerceIn(0, 4)
+            val hp = snapshot[cursor + 3].coerceAtLeast(0f)
+            val maxHp = snapshot[cursor + 4].coerceAtLeast(1f)
+            val radius = snapshot[cursor + 5].coerceAtLeast(dp(5f))
+            val enemyAngle = snapshot[cursor + 6]
+            val phase = snapshot[cursor + 7]
+            val elite = snapshot[cursor + 8] > .5f
+            val flashing = snapshot[cursor + 9] > 0f
+            val color = when (kind) {
+                0 -> Color.rgb(255, 102, 126)
+                1 -> Color.rgb(255, 145, 72)
+                2 -> Color.rgb(185, 137, 255)
+                3 -> Color.rgb(255, 207, 74)
+                else -> mapSecondary
+            }
+            if (config.effects != "compact") {
+                paint.color = Color.argb(if (elite) 64 else 34, Color.red(color), Color.green(color), Color.blue(color))
+                canvas.drawCircle(x, y, radius * 1.75f, paint)
+            }
+            path.reset()
+            val sides = when (kind) { 0 -> 6; 1 -> 4; 2 -> 8; 3 -> 7; else -> 10 }
+            repeat(sides) { vertex ->
+                val vertexAngle = enemyAngle + phase * .08f + vertex / sides.toFloat() * 6.2831855f
+                val vertexRadius = radius * if (kind == 0 && vertex % 2 == 0) 1.18f else 1f
+                val px = x + cos(vertexAngle) * vertexRadius
+                val py = y + sin(vertexAngle) * vertexRadius
+                if (vertex == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            }
+            path.close()
+            paint.color = if (flashing) Color.WHITE else color
+            canvas.drawPath(path, paint)
+            strokePaint.shader = null
+            strokePaint.strokeWidth = dp(if (elite) 3f else 1.5f)
+            strokePaint.color = if (elite) Color.rgb(255, 231, 121) else Color.argb(185, 255, 255, 255)
+            canvas.drawPath(path, strokePaint)
+            paint.color = Color.argb(120, 3, 8, 18)
+            canvas.drawCircle(x, y, radius * .38f, paint)
+            val barWidth = radius * 1.8f
+            val barTop = y - radius - dp(9f)
+            paint.color = Color.argb(125, 0, 0, 0)
+            canvas.drawRoundRect(x - barWidth * .5f, barTop, x + barWidth * .5f, barTop + dp(4f), dp(2f), dp(2f), paint)
+            paint.color = if (elite) Color.rgb(255, 225, 104) else Color.rgb(255, 102, 126)
+            canvas.drawRoundRect(
+                x - barWidth * .5f,
+                barTop,
+                x - barWidth * .5f + barWidth * (hp / maxHp).coerceIn(0f, 1f),
+                barTop + dp(4f),
+                dp(2f),
+                dp(2f),
+                paint,
+            )
+        }
+    }
+
+    private fun drawProjectiles(canvas: Canvas, offset: Int, count: Int) {
+        repeat(count) { index ->
+            val cursor = offset + index * BattleSnapshot.PROJECTILE_STRIDE
+            if (cursor + BattleSnapshot.PROJECTILE_STRIDE - 1 >= snapshotSize) return@repeat
+            val x = snapshot[cursor]
+            val y = snapshot[cursor + 1]
+            val radius = snapshot[cursor + 2]
+            val color = effectColor(snapshot[cursor + 4].toInt())
+            paint.color = Color.argb(45, Color.red(color), Color.green(color), Color.blue(color))
+            canvas.drawCircle(x, y, radius * 2.8f, paint)
+            paint.color = color
+            canvas.drawCircle(x, y, radius, paint)
+            paint.color = Color.WHITE
+            canvas.drawCircle(x, y, radius * .36f, paint)
+        }
+    }
+
+    private fun drawParticles(canvas: Canvas, offset: Int, count: Int) {
+        if (config.effects == "compact") return
+        val stride = BattleSnapshot.PARTICLE_STRIDE
+        val limit = when {
+            effectivePerformanceTier() >= 2 -> min(count, 60)
+            config.effects == "luxury" -> count
+            else -> min(count, 120)
+        }
+        repeat(limit) { index ->
+            val cursor = offset + index * stride
+            if (cursor + stride - 1 >= snapshotSize) return@repeat
+            val life = snapshot[cursor + 3]
+            val maxLife = snapshot[cursor + 4].coerceAtLeast(.001f)
+            val alpha = (life / maxLife).coerceIn(0f, 1f)
+            val color = effectColor(snapshot[cursor + 5].toInt())
+            paint.color = Color.argb((alpha * 230).toInt(), Color.red(color), Color.green(color), Color.blue(color))
+            canvas.drawCircle(snapshot[cursor], snapshot[cursor + 1], snapshot[cursor + 2] * alpha, paint)
+        }
+    }
+
+    private fun foodColor(hue: Float): Int {
+        foodHsv[0] = hue
+        return Color.HSVToColor(foodHsv)
+    }
+
+    private fun effectColor(slot: Int): Int = when (slot) {
+        1 -> mapSecondary
+        2 -> Color.rgb(255, 102, 126)
+        3 -> Color.rgb(255, 225, 104)
+        4 -> Color.WHITE
+        else -> mapPrimary
+    }
+
+    private fun drawSnakeBody(
+        canvas: Canvas,
+        segmentOffset: Int,
+        segmentCount: Int,
+        headX: Float,
+        headY: Float,
+        primary: Int,
+        secondary: Int,
+        player: Boolean,
+    ) {
+        if (segmentCount <= 0 || segmentOffset + 1 >= snapshotSize) return
+        val bodyStep = when {
+            effectivePerformanceTier() >= 2 -> 5
+            config.quality == "quality" -> 2
+            else -> 3
+        }
+        path.reset()
+        path.moveTo(snapshot[segmentOffset], snapshot[segmentOffset + 1])
+        var lastX = snapshot[segmentOffset]
+        var lastY = snapshot[segmentOffset + 1]
+        var index = bodyStep
+        while (index < segmentCount) {
+            val cursor = segmentOffset + index * 2
+            if (cursor + 1 >= snapshotSize) break
+            lastX = snapshot[cursor]
+            lastY = snapshot[cursor + 1]
+            path.lineTo(lastX, lastY)
+            index += bodyStep
+        }
+        val tailCursor = segmentOffset + (segmentCount - 1) * 2
+        if (tailCursor + 1 < snapshotSize) {
+            lastX = snapshot[tailCursor]
+            lastY = snapshot[tailCursor + 1]
+            path.lineTo(lastX, lastY)
+        }
+        strokePaint.style = Paint.Style.STROKE
+        strokePaint.strokeCap = Paint.Cap.ROUND
+        strokePaint.strokeJoin = Paint.Join.ROUND
+        if (config.effects == "luxury" && effectivePerformanceTier() == 0) {
+            strokePaint.shader = null
+            strokePaint.strokeWidth = dp(if (player) 32f else 26f)
+            strokePaint.color = Color.argb(34, Color.red(primary), Color.green(primary), Color.blue(primary))
+            canvas.drawPath(path, strokePaint)
+        }
+        strokePaint.strokeWidth = dp(if (player) 22f else 18f)
+        strokePaint.shader = if (player) {
+            LinearGradient(headX, headY, lastX, lastY, primary, secondary, Shader.TileMode.CLAMP)
+        } else {
+            null
+        }
+        if (!player) strokePaint.color = primary
+        canvas.drawPath(path, strokePaint)
+        strokePaint.shader = null
+        strokePaint.strokeWidth = dp(if (player) 3f else 2f)
+        strokePaint.color = Color.argb(if (player) 112 else 82, 255, 255, 255)
+        canvas.drawPath(path, strokePaint)
+
         paint.color = Color.WHITE
-        canvas.drawCircle(headX, headY, dp(12).toFloat(), paint)
-        paint.color = snakePrimary
-        canvas.drawCircle(headX, headY, dp(9).toFloat(), paint)
-        val angle = atan2(directionY, directionX)
-        val eyeForwardX = cos(angle) * dp(6)
-        val eyeForwardY = sin(angle) * dp(6)
-        val eyeSideX = -sin(angle) * dp(3)
-        val eyeSideY = cos(angle) * dp(3)
+        canvas.drawCircle(headX, headY, dp(if (player) 15f else 13f), paint)
+        paint.color = primary
+        canvas.drawCircle(headX, headY, dp(if (player) 12.2f else 10.5f), paint)
+        val angle = if (player || segmentCount < 2 || segmentOffset + 3 >= snapshotSize) {
+            atan2(directionY, directionX)
+        } else {
+            atan2(headY - snapshot[segmentOffset + 3], headX - snapshot[segmentOffset + 2])
+        }
+        val eyeForwardX = cos(angle) * dp(if (player) 7f else 5.8f)
+        val eyeForwardY = sin(angle) * dp(if (player) 7f else 5.8f)
+        val eyeSideX = -sin(angle) * dp(if (player) 3.5f else 3f)
+        val eyeSideY = cos(angle) * dp(if (player) 3.5f else 3f)
         paint.color = Color.rgb(4, 10, 20)
-        canvas.drawCircle(headX + eyeForwardX + eyeSideX, headY + eyeForwardY + eyeSideY, dp(1.5f), paint)
-        canvas.drawCircle(headX + eyeForwardX - eyeSideX, headY + eyeForwardY - eyeSideY, dp(1.5f), paint)
+        canvas.drawCircle(headX + eyeForwardX + eyeSideX, headY + eyeForwardY + eyeSideY, dp(1.7f), paint)
+        canvas.drawCircle(headX + eyeForwardX - eyeSideX, headY + eyeForwardY - eyeSideY, dp(1.7f), paint)
     }
 
     private fun drawSkillEffects(canvas: Canvas) {
@@ -416,7 +699,7 @@ class BattleView(
             }
         }
         val shieldAge = now - shieldStartedMs
-        if (shieldAge in 0..3200) {
+        if (shieldAge in 0..4300) {
             val phase = sin(shieldAge / 160f) * dp(2)
             strokePaint.style = Paint.Style.STROKE
             strokePaint.strokeWidth = dp(3).toFloat()
@@ -469,6 +752,15 @@ class BattleView(
             cachedFpsText = "$roundedFps FPS"
         }
         canvas.drawText(cachedFpsText, right, pad + sp(33), paint)
+        if (snapshotSize >= BattleSnapshot.HEADER_SIZE) {
+            val armor = snapshot[BattleSnapshot.ARMOR].toInt().coerceAtLeast(0)
+            val maxArmor = snapshot[BattleSnapshot.MAX_ARMOR].toInt().coerceAtLeast(0)
+            val kills = snapshot[BattleSnapshot.KILLS].toInt().coerceAtLeast(0)
+            val combo = snapshot[BattleSnapshot.COMBO].toInt().coerceAtLeast(0)
+            paint.textSize = sp(8)
+            paint.color = Color.rgb(174, 190, 215)
+            canvas.drawText("护甲 $armor/$maxArmor  ·  击破 $kills${if (combo > 1) "  ·  ${combo}连杀" else ""}", right, pad + sp(46), paint)
+        }
         paint.textAlign = Paint.Align.LEFT
 
         val barWidth = dp(140).toFloat()
@@ -508,6 +800,49 @@ class BattleView(
         paint.color = Color.argb(155, 215, 227, 242)
         canvas.drawText(modeClock(), width * .5f, height - dp(18).toFloat(), paint)
         paint.textAlign = Paint.Align.LEFT
+    }
+
+    private fun drawMinimap(canvas: Canvas) {
+        if (config.quality == "performance" || effectivePerformanceTier() >= 2) return
+        val mapWidth = dp(116f)
+        val mapHeight = dp(68f)
+        val left = width - mapWidth - dp(20f)
+        val top = dp(66f)
+        paint.color = Color.argb(142, 3, 9, 21)
+        canvas.drawRoundRect(left, top, left + mapWidth, top + mapHeight, dp(12f), dp(12f), paint)
+        strokePaint.shader = null
+        strokePaint.style = Paint.Style.STROKE
+        strokePaint.strokeWidth = dp(1f)
+        strokePaint.color = Color.argb(105, Color.red(mapPrimary), Color.green(mapPrimary), Color.blue(mapPrimary))
+        canvas.drawRoundRect(left, top, left + mapWidth, top + mapHeight, dp(12f), dp(12f), strokePaint)
+        val sourceWidth = snapshot[BattleSnapshot.WORLD_WIDTH].coerceAtLeast(1f)
+        val sourceHeight = snapshot[BattleSnapshot.WORLD_HEIGHT].coerceAtLeast(1f)
+        val inset = dp(6f)
+        fun miniX(worldX: Float) = left + inset + worldX / sourceWidth * (mapWidth - inset * 2f)
+        fun miniY(worldY: Float) = top + inset + worldY / sourceHeight * (mapHeight - inset * 2f)
+
+        val segmentCount = snapshot[4].toInt().coerceAtLeast(0)
+        val foodCount = snapshot[5].toInt().coerceAtLeast(0)
+        val botCount = snapshot[6].toInt().coerceAtLeast(0)
+        var cursor = SNAPSHOT_HEADER_SIZE + segmentCount * 2 + foodCount * BattleSnapshot.FOOD_STRIDE
+        paint.color = Color.argb(205, Color.red(mapSecondary), Color.green(mapSecondary), Color.blue(mapSecondary))
+        repeat(botCount) {
+            if (cursor + BattleSnapshot.BOT_HEADER_SIZE - 1 >= snapshotSize) return@repeat
+            val segments = snapshot[cursor + 3].toInt().coerceAtLeast(0)
+            if (snapshot[cursor + 4] > .5f) canvas.drawCircle(miniX(snapshot[cursor]), miniY(snapshot[cursor + 1]), dp(1.8f), paint)
+            cursor += BattleSnapshot.BOT_HEADER_SIZE + segments * 2
+        }
+        val enemyCount = snapshot[BattleSnapshot.ENEMY_COUNT].toInt().coerceAtLeast(0)
+        paint.color = Color.rgb(255, 102, 126)
+        repeat(enemyCount) { index ->
+            val enemyCursor = cursor + index * BattleSnapshot.ENEMY_STRIDE
+            if (enemyCursor + 1 >= snapshotSize) return@repeat
+            canvas.drawCircle(miniX(snapshot[enemyCursor]), miniY(snapshot[enemyCursor + 1]), dp(1.4f), paint)
+        }
+        paint.color = Color.WHITE
+        canvas.drawCircle(miniX(snapshot[0]), miniY(snapshot[1]), dp(3f), paint)
+        paint.color = snakePrimary
+        canvas.drawCircle(miniX(snapshot[0]), miniY(snapshot[1]), dp(2f), paint)
     }
 
     private fun drawBackButton(canvas: Canvas, x: Float, y: Float) {
@@ -552,9 +887,9 @@ class BattleView(
         canvas.drawText("加速", boostX, boostY + boostRadius + dp(13), paint)
 
         val now = SystemClock.elapsedRealtime()
-        drawSkillButton(canvas, 0, "◎", "脉冲", now, pulseCooldownUntilMs, 4800L)
-        drawSkillButton(canvas, 1, "➤", "折跃", now, dashCooldownUntilMs, 3900L)
-        drawSkillButton(canvas, 2, "◇", "护盾", now, shieldCooldownUntilMs, 7200L)
+        drawSkillButton(canvas, 0, "◎", "脉冲", now, pulseCooldownUntilMs, 7200L)
+        drawSkillButton(canvas, 1, "➤", "折跃", now, dashCooldownUntilMs, 8400L)
+        drawSkillButton(canvas, 2, "◇", "护盾", now, shieldCooldownUntilMs, 9200L)
         paint.textAlign = Paint.Align.LEFT
     }
 
@@ -781,19 +1116,19 @@ class BattleView(
         when (index) {
             0 -> if (now >= pulseCooldownUntilMs) {
                 pulseStartedMs = now
-                pulseCooldownUntilMs = now + 4800L
+                pulseCooldownUntilMs = now + 7200L
                 haptic(HapticFeedbackConstants.CONFIRM)
                 activated = true
             }
             1 -> if (now >= dashCooldownUntilMs) {
-                dashUntilMs = now + 360L
-                dashCooldownUntilMs = now + 3900L
+                dashUntilMs = now + 460L
+                dashCooldownUntilMs = now + 8400L
                 haptic(HapticFeedbackConstants.CONFIRM)
                 activated = true
             }
             2 -> if (now >= shieldCooldownUntilMs) {
                 shieldStartedMs = now
-                shieldCooldownUntilMs = now + 7200L
+                shieldCooldownUntilMs = now + 9200L
                 haptic(HapticFeedbackConstants.CONFIRM)
                 activated = true
             }
@@ -913,6 +1248,7 @@ class BattleView(
     }
 
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float = hypot(x1 - x2, y1 - y2)
+    private fun positiveModulo(value: Float, modulus: Float): Float = ((value % modulus) + modulus) % modulus
     private fun mix(first: Int, second: Int, amount: Float): Int {
         val value = amount.coerceIn(0f, 1f)
         return Color.rgb(
@@ -927,7 +1263,12 @@ class BattleView(
     private fun sp(value: Int): Float = value * resources.displayMetrics.scaledDensity
 
     companion object {
-        private const val SNAPSHOT_HEADER_SIZE = 14
+        private const val SNAPSHOT_HEADER_SIZE = BattleSnapshot.HEADER_SIZE
+        private const val WEB_WORLD_WIDTH_DP = 2400f
+        private const val WEB_WORLD_HEIGHT_DP = 1450f
+        private const val WEB_BASE_SPEED_DP = 164f
+        private const val PICKUP_RADIUS_DP = 32f
+        private const val SEGMENT_SPACING_DP = 5.6f
         private val UPGRADE_ICONS = arrayOf("⚡", "◎", "◇")
         private val UPGRADE_NAMES = arrayOf(
             arrayOf("超频突触", "磁暴场", "虚空电容"),
@@ -940,6 +1281,18 @@ class BattleView(
             arrayOf("立即增加 8 节", "转向响应 +16%", "能量立即充满"),
             arrayOf("得分效率 +15%", "成长效率 +20%", "经验效率 +18%"),
             arrayOf("资源体积 +12%", "移动速度 +5%", "拾取与回复强化"),
+        )
+        private val WILD_THORNS = arrayOf(
+            floatArrayOf(460f, 360f, 82f),
+            floatArrayOf(1850f, 330f, 95f),
+            floatArrayOf(760f, 1130f, 88f),
+            floatArrayOf(1980f, 1030f, 72f),
+        )
+        private val LAB_POOLS = arrayOf(
+            floatArrayOf(470f, 340f, 96f),
+            floatArrayOf(1810f, 380f, 112f),
+            floatArrayOf(650f, 1110f, 105f),
+            floatArrayOf(1910f, 1060f, 92f),
         )
     }
 }

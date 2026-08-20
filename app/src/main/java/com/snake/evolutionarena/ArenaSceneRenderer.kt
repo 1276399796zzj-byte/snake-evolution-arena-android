@@ -18,6 +18,8 @@ interface ArenaSceneRenderer {
         pulseStartedMs: Long,
         shieldStartedMs: Long,
         performanceTier: Int,
+        cameraX: Float,
+        cameraY: Float,
     )
 
     fun onHostResume()
